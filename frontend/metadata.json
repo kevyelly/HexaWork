@@ -1,9 +1,5 @@
 {
-  "name": "Freelance-Escrow",
-  "description": "A secure, AI-powered freelance marketplace with smart contract escrow and dispute resolution.",
-  "requestFramePermissions": [
-    "camera",
-    "microphone",
-    "geolocation"
-  ]
+  "name": "Escrow Freelance Marketplace",
+  "description": "A modern freelance platform with built-in smart escrow, AI mediation, and real-time collaboration tools.",
+  "requestFramePermissions": []
 }

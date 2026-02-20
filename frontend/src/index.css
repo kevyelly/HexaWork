@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-200: #ddd6fe;
+  --color-brand-300: #c4b5fd;
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+  --color-brand-800: #5b21b6;
+  --color-brand-900: #4c1d95;
+
+  --color-accent-soft: #fff7ed;
+  --color-accent-warm: #fb923c;
+  
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+}
+
+@layer base {
+  body {
+    @apply bg-[#F9FAFB] text-zinc-900 font-sans antialiased;
+  }
+}
+
+.glass-panel {
+  @apply bg-white/90 backdrop-blur-xl border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)];
+}
+
+.card-hover {
+  @apply transition-all duration-300 hover:shadow-[0_20px_50px_rgba(139,92,246,0.1)] hover:-translate-y-1 hover:border-brand-200;
+}
+
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+}
+
+.fun-button {
+  @apply relative overflow-hidden transition-all duration-300 active:scale-95;
+}
+
+.fun-button::after {
+  content: '';
+  @apply absolute inset-0 bg-white/20 translate-y-full transition-transform duration-300;
+}
+
+.fun-button:hover::after {
+  @apply translate-y-0;
+}
+
+.markdown-body {
+  @apply max-w-none;
+}

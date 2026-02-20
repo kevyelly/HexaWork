@@ -1,0 +1,9 @@
+{
+  "name": "Freelance-Escrow",
+  "description": "A secure, AI-powered freelance marketplace with smart contract escrow and dispute resolution.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

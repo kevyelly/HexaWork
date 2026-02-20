@@ -1,12 +1,13 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
+import { View } from '../types';
 
 interface LandingPageViewProps {
-  onStart: () => void;
+  onNavigate: (view: View) => void;
 }
 
-export const LandingPageView: React.FC<LandingPageViewProps> = ({ onStart }) => (
+export const LandingPageView: React.FC<LandingPageViewProps> = ({ onNavigate }) => (
   <div className="min-h-screen bg-white selection:bg-brand-100 selection:text-brand-900">
     <nav className="h-24 px-4 md:px-8 flex items-center justify-between max-w-7xl mx-auto">
       <div className="flex items-center gap-3 group cursor-pointer">
@@ -19,8 +20,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onStart }) => 
         <a href="#" className="hover:text-brand-600 transition-colors">Pricing</a>
       </div>
       <div className="flex items-center gap-4 md:gap-6">
-        <button onClick={onStart} className="text-zinc-900 font-black hover:text-brand-600 transition-colors text-sm md:text-base">Log In</button>
-        <button onClick={onStart} className="bg-zinc-900 text-white px-4 py-2 md:px-8 md:py-3.5 rounded-2xl font-black hover:bg-brand-600 transition-all shadow-2xl shadow-zinc-900/20 hover:scale-105 active:scale-95 text-sm md:text-base">Get Started 🚀</button>
+        <button onClick={() => onNavigate('login')} className="text-zinc-900 font-black hover:text-brand-600 transition-colors text-sm md:text-base">Log In</button>
+        <button onClick={() => onNavigate('dashboard')} className="bg-zinc-900 text-white px-4 py-2 md:px-8 md:py-3.5 rounded-2xl font-black hover:bg-brand-600 transition-all shadow-2xl shadow-zinc-900/20 hover:scale-105 active:scale-95 text-sm md:text-base">Get Started 🚀</button>
       </div>
     </nav>
 
@@ -37,10 +38,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onStart }) => 
           The world's friendliest freelance marketplace with built-in <span className="text-zinc-900 font-bold">Smart Escrow</span> and AI mediation.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 md:gap-6">
-          <button onClick={onStart} className="w-full sm:w-auto bg-brand-600 text-white px-8 md:px-12 py-4 md:py-5 rounded-2xl font-black text-lg md:text-xl shadow-2xl shadow-brand-600/30 hover:bg-brand-700 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
+          <button onClick={() => onNavigate('marketplace')} className="w-full sm:w-auto bg-brand-600 text-white px-8 md:px-12 py-4 md:py-5 rounded-2xl font-black text-lg md:text-xl shadow-2xl shadow-brand-600/30 hover:bg-brand-700 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
             Hire Top Talent <ChevronRight size={24} />
           </button>
-          <button onClick={onStart} className="w-full sm:w-auto bg-white border-4 border-zinc-100 text-zinc-900 px-8 md:px-12 py-4 md:py-5 rounded-2xl font-black text-lg md:text-xl hover:border-brand-200 transition-all hover:scale-105 active:scale-95">
+          <button onClick={() => onNavigate('signup')} className="w-full sm:w-auto bg-white border-4 border-zinc-100 text-zinc-900 px-8 md:px-12 py-4 md:py-5 rounded-2xl font-black text-lg md:text-xl hover:border-brand-200 transition-all hover:scale-105 active:scale-95">
             Find Your Next Gig
           </button>
         </div>

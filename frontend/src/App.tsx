@@ -22,6 +22,8 @@ import { TeamManagementView } from './views/TeamManagementView';
 import { DisputesView } from './views/DisputesView';
 import { SettingsView } from './views/SettingsView';
 import { LandingPageView } from './views/LandingPageView';
+import { LoginView } from './views/LoginView';
+import { SignUpView } from './views/SignUpView';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('landing');
@@ -29,7 +31,15 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   if (currentView === 'landing') {
-    return <LandingPageView onStart={() => setCurrentView('dashboard')} />;
+    return <LandingPageView onNavigate={(view) => setCurrentView(view)} />;
+  }
+  // ADDED THESE TWO BLOCKS:
+  if (currentView === 'login') {
+    return <LoginView onNavigate={setCurrentView} />;
+  }
+
+  if (currentView === 'signup') {
+    return <SignUpView onNavigate={setCurrentView} />;
   }
 
   const renderView = () => {

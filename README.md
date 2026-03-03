@@ -1,4 +1,4 @@
-z# 🚀 Hexawork 
+# 🚀 Hexawork 
 **Trustless. Fair. Decentralized. The AI-Powered Escrow for the Gig Economy.**
 
 [![Hackathon](https://img.shields.io/badge/Hackathon-Ready-purple.svg)](https://github.com/)

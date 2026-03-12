@@ -2,9 +2,18 @@ import json
 from fastapi import FastAPI, HTTPException, Form, UploadFile, File
 from langchain_core.messages import HumanMessage
 from agents import arbitrator_graph
-from tools import extract_code_from_zip  
+from tools import extract_code_from_zip
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Freelance-Escrow AI Arbitrator")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/dispute/resolve")
 async def resolve_dispute(

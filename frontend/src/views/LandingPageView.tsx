@@ -8,7 +8,6 @@ interface LandingPageViewProps {
     onNavigate: (view: View) => void;
 }
 
-// Reusable Hexagon SVG component to keep the code clean
 const HexagonShape = ({ className }: { className?: string }) => (
     <svg
         viewBox="0 0 100 100"
@@ -43,9 +42,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
     return (
         <div className="relative min-h-screen bg-white selection:bg-brand-100 selection:text-brand-900 overflow-hidden">
-            {/* Background Decor: Mesh Gradients, Dot Grid, and Floating Hexagons */}
             <div className="absolute inset-0 z-0 pointer-events-none">
-                {/* Subtle dot grid for a technical feel */}
                 <div
                     className="absolute inset-0 opacity-[0.15]"
                     style={{
@@ -55,12 +52,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     }}
                 />
 
-                {/* Soft radial mesh glows */}
                 <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-brand-400/20 blur-[120px] rounded-full" />
                 <div className="absolute top-1/2 -right-60 w-[500px] h-[500px] bg-purple-400/10 blur-[150px] rounded-full" />
 
-                {/* --- LEFT SIDE HEXAGONS --- */}
-                {/* Large blurred background hexagon */}
                 <motion.div
                     animate={{ y: [0, -40, 0], rotate: [0, 5, 0] }}
                     transition={{
@@ -73,7 +67,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* Medium sharp/glassy hexagon */}
                 <motion.div
                     animate={{
                         y: [0, 30, 0],
@@ -91,7 +84,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* Small fast floating hexagon */}
                 <motion.div
                     animate={{ y: [0, -50, 0], rotate: [0, 45, 0] }}
                     transition={{
@@ -105,8 +97,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* --- RIGHT SIDE HEXAGONS --- */}
-                {/* Massive subtle background hexagon */}
                 <motion.div
                     animate={{ y: [0, 50, 0], rotate: [0, -10, 0] }}
                     transition={{
@@ -119,7 +109,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* Medium prominent hexagon */}
                 <motion.div
                     animate={{
                         y: [0, -25, 0],
@@ -137,7 +126,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* Small sharp rotating hexagon */}
                 <motion.div
                     animate={{ y: [0, 20, 0], rotate: [0, -90, 0] }}
                     transition={{
@@ -151,8 +139,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* --- INNER SCATTERED HEXAGONS (The 4 extra ones!) --- */}
-                {/* Center-left inner floater */}
                 <motion.div
                     animate={{
                         y: [0, -30, 0],
@@ -169,7 +155,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* Center-right inner floater */}
                 <motion.div
                     animate={{ y: [0, 40, 0], rotate: [-45, 45, -45] }}
                     transition={{
@@ -183,7 +168,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* Top-right tiny spinner */}
                 <motion.div
                     animate={{ y: [0, -15, 0], rotate: [0, 90, 0] }}
                     transition={{
@@ -197,13 +181,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     <HexagonShape />
                 </motion.div>
 
-                {/* Bottom-center large pulsing glow */}
             </div>
 
-            {/* Navbar */}
             <nav className="relative z-10 h-24 px-4 md:px-8 flex items-center justify-between max-w-7xl mx-auto">
                 <div className="flex items-center gap-3 group cursor-pointer">
-                    {/* Logo - 'H' inside a Hexagon */}
                     <div className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg shadow-brand-600/10 border border-zinc-100 group-hover:rotate-12 group-hover:scale-110 transition-transform">
                         <svg
                             viewBox="0 0 100 100"
@@ -235,7 +216,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                             />
                         </svg>
                     </div>
-                    {/* Brand Name */}
                     <span className="font-black text-2xl md:text-3xl tracking-tighter text-zinc-900">
                         HexaWork
                     </span>
@@ -270,10 +250,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 </div>
             </nav>
 
-            {/* Hero Section */}
             <section className="relative z-10 px-4 md:px-8 pt-16 md:pt-28 pb-32 md:pb-48 max-w-7xl mx-auto text-center flex flex-col items-center justify-center">
                 <div className="flex flex-col items-center w-full">
-                    {/* Tag */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -287,7 +265,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         <span>✨</span> The Future of Freelancing
                     </motion.div>
 
-                    {/* Headline */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -308,7 +285,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         </h1>
                     </motion.div>
 
-                    {/* Subheadline */}
                     <motion.p
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -327,7 +303,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         and AI mediation.
                     </motion.p>
 
-                    {/* CTA Buttons */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}

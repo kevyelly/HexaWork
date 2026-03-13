@@ -1,4 +1,3 @@
-// ProjectChatView.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, MessageSquare, FileText, CheckCircle2, Paperclip, X, Plus, ShieldCheck, Coins, UploadCloud, UserCircle, Bot, Calendar, Clock, AlertCircle, Bell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -131,7 +130,12 @@ export const ProjectChatView: React.FC = () => {
                 { room_id: getRoomId(), wallet_address: walletAddress.toLowerCase(), content: `Escrow successfully funded with ${ethers.formatEther(totalWei)} PAS. Contract is now active.` },
                 { room_id: getRoomId(), wallet_address: activeChatWallet.toLowerCase(), content: `Escrow Funded by Employer. You must now stake your 5% security deposit to begin working.` }
             ]);
-        } catch (error) { console.error(error); alert("Deployment failed."); } finally { setIsDeploying(false); }
+        } catch (error: any) {
+            console.error("Full Error:", error);
+            if (error.code === 'CALL_EXCEPTION') alert("Contract deployment reverted!");
+            else if (error.code === 'ACTION_REJECTED') alert("Transaction rejected in MetaMask.");
+            else alert("Deployment failed: " + error.message);
+        } finally { setIsDeploying(false); }
     };
 
     const handleFreelancerStake = async () => {
@@ -141,6 +145,7 @@ export const ProjectChatView: React.FC = () => {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
+
             const stakeAmount = await contract.freelancerStake();
             const tx = await contract.stakeFreelancer({ value: stakeAmount, gasLimit: 300000 });
             await tx.wait(1);
@@ -155,17 +160,10 @@ export const ProjectChatView: React.FC = () => {
             alert("Stake successful. You can now start submitting work.");
         } catch (error: any) {
             console.error("Full Error:", error);
-
-            if (error.code === 'CALL_EXCEPTION') {
-                alert(`Contract Reverted! Reason: ${error.reason || 'No specific reason provided by contract. Check if you are using the correct wallet or if the contract is already cancelled.'}`);
-            } else if (error.code === 'ACTION_REJECTED') {
-                alert("You rejected the transaction in MetaMask.");
-            } else {
-                alert(`Stake failed: ${error.message}`);
-            }
-        } finally {
-            setIsStaking(false);
-        }
+            if (error.code === 'CALL_EXCEPTION') alert("Contract Reverted! Verify you are using the correct wallet or have sufficient funds.");
+            else if (error.code === 'ACTION_REJECTED') alert("Transaction rejected in MetaMask.");
+            else alert("Stake failed: " + error.message);
+        } finally { setIsStaking(false); }
     };
 
     const handleClaimRefund = async () => {
@@ -189,8 +187,10 @@ export const ProjectChatView: React.FC = () => {
 
             alert("Refund successful. Remaining funds are back in your wallet.");
         } catch (error: any) {
-            console.error(error);
-            alert(`Refund failed: ${error.reason || error.message}`);
+            console.error("Full Error:", error);
+            if (error.code === 'CALL_EXCEPTION') alert("Refund Reverted! Ensure you are the employer and the refund conditions are met.");
+            else if (error.code === 'ACTION_REJECTED') alert("Transaction rejected in MetaMask.");
+            else alert("Refund failed: " + error.message);
         } finally { setIsProcessingMilestone(false); }
     };
 
@@ -280,8 +280,10 @@ export const ProjectChatView: React.FC = () => {
 
             alert(status === 'approved' ? "Funds released successfully." : "Milestone disputed. Freelancer has been notified.");
         } catch (error: any) {
-            console.error(error);
-            alert(`Review action failed: ${error.reason || error.message}`);
+            console.error("Full Error:", error);
+            if (error.code === 'CALL_EXCEPTION') alert("Contract Reverted! Check if you are the employer and the milestone sequence is correct.");
+            else if (error.code === 'ACTION_REJECTED') alert("Transaction rejected in MetaMask.");
+            else alert("Review action failed: " + error.message);
         } finally { setIsProcessingMilestone(false); }
     };
 
@@ -330,7 +332,7 @@ export const ProjectChatView: React.FC = () => {
         } catch (error) { console.error(error); } finally { setIsUploading(false); }
     };
 
-    // HISTORY FETCH (FIXED FOR CASE SENSITIVITY)
+    // HISTORY FETCH (CASE SENSITIVE FIX)
     useEffect(() => {
         if (!walletAddress) return;
         const lowerWallet = walletAddress.toLowerCase();
@@ -384,7 +386,7 @@ export const ProjectChatView: React.FC = () => {
         fetchHistory();
     }, [walletAddress]);
 
-    // MESSAGES FETCH (FIXED FOR CASE SENSITIVITY)
+    // MESSAGES FETCH (CASE SENSITIVE FIX)
     useEffect(() => {
         if (!walletAddress || !activeRoomId || !activeChatWallet) return;
         const roomId = activeRoomId;

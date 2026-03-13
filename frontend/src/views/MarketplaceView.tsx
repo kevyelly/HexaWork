@@ -167,10 +167,36 @@ export const MarketplaceView: React.FC = () => {
         if (!selectedApplicant || !interviewDate || !interviewTime) return;
         setIsProcessing(true);
         try {
-            const meetingLink = `https://zoom.us/j/${Math.floor(100000000 + Math.random() * 900000000)}?pwd=localtestmock`;
+            // 1. Call your custom Node.js backend to generate the Zoom meeting
+            let meetingLink = '';
+            try {
+                const zoomResponse = await fetch('http://localhost:3001/api/create-meeting', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!zoomResponse.ok) {
+                    throw new Error(`Server returned ${zoomResponse.status}`);
+                }
+
+                const zoomData = await zoomResponse.json();
+
+                meetingLink = zoomData.join_url;
+            } catch (zoomError) {
+                console.error("Zoom Generation Error:", zoomError);
+                throw new Error("Failed to generate Zoom link. Please ensure your backend server (localhost:3001) is running.");
+            }
+
             const formattedDateTime = `${interviewDate} at ${interviewTime}`;
 
-            const { error } = await supabase.from('applications').update({ status: 'interviewing', meeting_date: formattedDateTime, meeting_link: meetingLink }).eq('id', selectedApplicant.id);
+            const { error } = await supabase.from('applications').update({
+                status: 'interviewing',
+                meeting_date: formattedDateTime,
+                meeting_link: meetingLink
+            }).eq('id', selectedApplicant.id);
+
             if (error) throw new Error("DB Error (Schedule): " + error.message);
 
             await supabase.from('notifications').insert([{
@@ -186,11 +212,13 @@ export const MarketplaceView: React.FC = () => {
             setInterviewTime('');
 
             setIsReviewModalOpen(true);
-            alert("Interview scheduled successfully!");
+            alert("Interview scheduled and Zoom link generated successfully!");
         } catch (err: any) {
             console.error(err);
             alert(err.message);
-        } finally { setIsProcessing(false); }
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     const handleAcceptApplicant = async (appId: string, freelancerAddr: string, jobToAccept: Job) => {

@@ -1,72 +1,79 @@
 # 🚀 Hexawork 
 **Trustless. Fair. Decentralized. The AI-Powered Escrow for the Gig Economy.**
 
-[![Hackathon](https://img.shields.io/badge/Hackathon-Ready-purple.svg)](https://github.com/)
-[![Solidity](https://img.shields.io/badge/Solidity-EVM-363636.svg)](https://soliditylang.org/)
-[![AI-Powered](https://img.shields.io/badge/AI-Mediator-000000.svg)](https://github.com/)
-
-
-
-## 🛑 The Problem
-In the fast-growing gig economy—especially in regions like the Philippines—trust is broken. 
-* **Freelancers** suffer from "joy-hiring" (clients refusing to pay after work is delivered).
-* **Clients** suffer from "ghosting" (freelancers taking an upfront fee and disappearing).
-* **Traditional Platforms** (Upwork, Fiverr) charge exorbitant fees (10-20%) and rely on slow, biased human customer service for disputes.
-
-## 💡 The Hexawork Solution
-**Hexawork** replaces blind trust with immutable code. By combining **Dual-Staking Smart Contracts** with an **Objective AI Mediator**, we ensure that clients always get what they paid for, and freelancers always get paid for their work.
-
-### ✨ Key Features
-* 🤝 **Dual-Staking Escrow:** The Client locks the total project budget ($B$), and the Freelancer locks a micro "Commitment Stake" (e.g., 50 PHP). Both parties have skin in the game.
-* 🎙️ **AI-Transcribed Interviews:** Built-in video calls automatically transcribe and summarize the "Scope of Work" into immutable contract terms.
-* ⏱️ **Cryptographic Deadlines:** Time-locked contracts automatically slash the freelancer's stake and refund the client if the deadline passes with zero submissions.
-* ⚖️ **Automated Dispute Resolution:** If a client refuses to release funds, the AI Mediator analyzes the initial interview transcript, the real-time chat logs, and the submitted work to render a mathematically fair verdict instantly.
-* 💬 **Immutable Evidence Chat:** Integrated real-time chat (via Socket.io) where messages act as permanent evidence for the AI judge.
+Hexawork is a decentralized freelance platform that replaces blind trust with immutable code. By combining **Dual-Staking Smart Contracts** on the Polkadot Hub EVM with an **Objective AI Mediator**, we ensure that clients get what they paid for and freelancers always get paid for their work.
 
 ---
 
-## 🏗️ Architecture & Workflow
-
-1. **Discovery & Interview:** Client posts a job $\rightarrow$ Freelancer applies $\rightarrow$ In-App Video Interview with AI Transcription.
-2. **The Double Opt-In:** Both parties review the AI-generated "Meeting Memo." 
-3. **The Lock (On-Chain):** Client signs transaction to lock project funds. Freelancer signs to lock their micro-stake. `block.timestamp` deadline is set.
-4. **Development:** Freelancer submits work via the Hexawork portal before the timer hits zero.
-5. **Resolution:** * *Happy Path:* Client approves $\rightarrow$ Smart Contract releases all funds to Freelancer.
-    * *Dispute Path:* AI evaluates chat logs/commits vs. the original agreement $\rightarrow$ Smart Contract executes the AI's verdict.
+## 🧠 Why Hexawork?
+* **Dual-Staking Escrow:** Clients lock project funds; Freelancers lock a 5% "Commitment Stake." Both parties have skin in the game.
+* **AI-Transcribed Interviews:** Video calls automatically transcribe the "Scope of Work" into immutable contract terms.
+* **Cryptographic Deadlines:** Time-locked contracts automatically handle refunds and stake-slashing if deadlines are missed.
+* **AI Arbitrator:** An automated LangGraph agent that audit code (GitHub), verifies live sites (Firecrawl), and analyzes chat history to render fair verdicts instantly.
 
 ---
 
 ## 🛠️ Tech Stack
 
-### Frontend (Client App)
-* **React.js** (Next.js optional)
-* **Tailwind CSS** (Custom FinTech UI: Purple & White theme)
-* **Web3.js / Ethers.js** (For wallet connection)
-* **Socket.io-client** (Real-time messaging)
+### **Frontend (Vite + React 19)**
+* **Vite / React 19:** Modern, fast UI with concurrent rendering.
+* **Tailwind CSS 4:** Sleek, high-performance styling.
+* **Supabase:** Real-time chat (WebSockets), persistent milestone storage, and document hosting.
+* **Ethers.js v6:** Interaction with Polkadot Hub EVM Smart Contracts.
+* **Motion:** Fluid, high-end animations (formerly Framer Motion).
 
-### Backend & AI
-* **Node.js & Express** (Server logic and API routing)
-* **Socket.io** (Handling chat rooms and system alerts)
-* **MongoDB** (Immutable storage for chat logs and user profiles)
-* **LLM API** (Gemini/OpenAI for transcription summarization and dispute mediation)
+### **Backend (AI & Services)**
+* **AI Arbitrator (FastAPI + LangGraph):** Multi-agent system (Auditor, Scraper, Judge) using GPT-4o-mini for dispute resolution.
+* **Web Scraping:** Firecrawl for real-time UI/UX verification of live project sites.
+* **Meeting Service (Node.js/Express):** Integration with Zoom API for automated meeting memos.
 
-### Blockchain (Web3)
-* **Solidity** (Smart contract logic)
-* **Hardhat** (Testing and deployment)
-* **EVM-Compatible Chain** (Polygon/Ethereum/Arbitrum)
+### **Blockchain (Smart Contracts)**
+* **Solidity:** Custom Escrow logic on Polkadot Hub EVM.
+* **On-Chain Milestones:** Payment releases are triggered via on-chain approval or AI verdict.
 
 ---
 
-## 🚀 Getting Started (Local Development)
+## 🏗️ Project Structure
+```bash
+├── frontend/               # React 19 Client App
+│   ├── src/lib/supabase.ts # Database & Auth configuration
+│   └── src/views/          # UI components (Dashboard, Chat, Disputes)
+├── backend/                # Server-Side Services
+│   ├── src/main.py         # AI Arbitrator API (Python/FastAPI)
+│   ├── src/agents.py       # LangGraph Agent logic
+│   ├── src/tools.py        # Code auditing & Web scraping tools
+│   └── src/server.ts       # Zoom Meeting Integration (Node.js/Express)
+└── requirements.txt        # Backend dependencies
+```
 
-### Prerequisites
-* Node.js (v18+)
-* MetaMask Wallet Extension
-* MongoDB running locally or via MongoDB Atlas
+---
 
-### Installation
+## 🚀 Getting Started
 
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/yourusername/hexawork.git](https://github.com/yourusername/hexawork.git)
-   cd hexawork
+### **Prerequisites**
+* **Node.js** (v18+) & **Python** (v3.10+)
+* **MetaMask** (configured for Polkadot Hub EVM)
+* **API Keys:** Supabase, OpenAI, Firecrawl, and Zoom.
+
+### **1. AI Arbitrator (Python Backend)**
+1. **Navigate to backend:** `cd backend`
+2. **Setup environment:** Create a `.env` with `OPENAI_API_KEY` and `FIRECRAWL_API_KEY`.
+3. **Install deps:** `pip install -r requirements.txt`
+4. **Run Server:** `python src/main.py` (Runs on port 8000)
+
+### **2. Meeting Service (Node Backend)**
+1. **From root/frontend:** Ensure `npm install` has been run.
+2. **Setup environment:** Create a `.env` in `backend/` with `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, and `ZOOM_ACCOUNT_ID`.
+3. **Run Service:** `npx tsx backend/src/server.ts` (Runs on port 3001)
+
+### **3. Frontend (React Client)**
+1. **Navigate to frontend:** `cd frontend`
+2. **Install deps:** `npm install`
+3. **Setup environment:** Create a `.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+4. **Launch:** `npm run dev` (Runs on port 3000)
+
+---
+
+## 🤝 Community & Support
+* **Hackathon:** Built for Polkadot Hub.
+* **Inquiries:** 📍 PH-based startup focusing on the local gig economy.

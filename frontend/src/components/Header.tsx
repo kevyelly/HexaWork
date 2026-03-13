@@ -1,12 +1,14 @@
 import React from 'react';
-import { Search, Bell, Menu, Wallet } from 'lucide-react';
+import { Search, Bell, Menu, Wallet, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { View } from '../types';
 import { useWallet } from '../lib/WalletContext';
 
 interface HeaderProps { currentView: View; onMenuClick: () => void; }
 
 export const Header: React.FC<HeaderProps> = ({ currentView, onMenuClick }) => {
-    const { walletAddress, connectWallet } = useWallet();
+    const { walletAddress, connectWallet, disconnectWallet } = useWallet();
+    const navigate = useNavigate();
 
     const formatAddress = (address: string) => `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
 
@@ -18,12 +20,24 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onMenuClick }) => {
             </div>
             <div className="flex items-center gap-3 md:gap-6">
                 {walletAddress ? (
-                    <div className="flex items-center gap-3 p-1.5 pr-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                        <div className="w-8 h-8 rounded-xl bg-brand-100 flex items-center justify-center text-brand-700 font-black text-xs"><Wallet size={16} /></div>
-                        <div className="text-left">
-                            <p className="text-xs font-black text-zinc-900 leading-none">{formatAddress(walletAddress)}</p>
-                            <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mt-1">Connected ⚡</p>
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 p-1.5 pr-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                            <div className="w-8 h-8 rounded-xl bg-brand-100 flex items-center justify-center text-brand-700 font-black text-xs"><Wallet size={16} /></div>
+                            <div className="text-left">
+                                <p className="text-xs font-black text-zinc-900 leading-none">{formatAddress(walletAddress)}</p>
+                                <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mt-1">Connected ⚡</p>
+                            </div>
                         </div>
+                        <button 
+                            onClick={() => {
+                                disconnectWallet();
+                                navigate('/');
+                            }}
+                            className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            title="Disconnect Wallet"
+                        >
+                            <LogOut size={20} />
+                        </button>
                     </div>
                 ) : (
                     <button onClick={connectWallet} className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white rounded-2xl font-bold text-sm hover:bg-zinc-800 transition-all">

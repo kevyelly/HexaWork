@@ -4,11 +4,13 @@ import { ethers } from 'ethers';
 interface WalletContextType {
     walletAddress: string | null;
     connectWallet: () => Promise<void>;
+    disconnectWallet: () => void;
 }
 
 const WalletContext = createContext<WalletContextType>({
     walletAddress: null,
     connectWallet: async () => {},
+    disconnectWallet: () => {},
 });
 
 export const WalletProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
@@ -34,8 +36,12 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({ children
         } else { alert("Please install MetaMask!"); }
     };
 
+    const disconnectWallet = () => {
+        setWalletAddress(null);
+    };
+
     return (
-        <WalletContext.Provider value={{ walletAddress, connectWallet }}>
+        <WalletContext.Provider value={{ walletAddress, connectWallet, disconnectWallet }}>
             {children}
         </WalletContext.Provider>
     );

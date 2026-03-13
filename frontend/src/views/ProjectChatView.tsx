@@ -8,7 +8,7 @@ import { ESCROW_ABI, ESCROW_BYTECODE } from '../lib/escrowContract';
 
 interface Message { id: string; content: string; sender_address: string; receiver_address: string; created_at: string; room_id?: string; }
 interface Notification { id: string; content: string; wallet_address: string; room_id: string; created_at: string; }
-interface ChatHistory { roomId: string; walletAddress: string; name: string; lastMessage: string; time: string; timestamp: number; }
+interface ChatHistory { roomId: string; walletAddress: string; name: string; jobTitle?: string; lastMessage: string; time: string; timestamp: number; }
 interface Milestone { id: string; project_id: string; title: string; status: 'pending' | 'submitted' | 'approved' | 'rejected'; due_date: string; amount?: string; duration_days?: string; notes?: string; file_url?: string; created_at: string; }
 interface ProjectFile { id: string; file_name: string; file_size: string; file_url?: string; }
 
@@ -111,16 +111,10 @@ export const ProjectChatView: React.FC = () => {
             const totalWei = milestoneAmountsInWei.reduce((a, b) => a + b, 0n);
 
             const factory = new ethers.ContractFactory(ESCROW_ABI, ESCROW_BYTECODE, signer);
-            const contract = await factory.deploy(activeChatWallet, milestoneAmountsInWei, durationDaysArray, { value: totalWei, gasLimit: 3000000 });
 
-            const deployTx = contract.deploymentTransaction();
-            if (deployTx) {
-                await deployTx.wait(1);
-            } else {
-                await contract.waitForDeployment();
-            }
-
+            const contract = await factory.deploy(activeChatWallet, milestoneAmountsInWei, durationDaysArray, { value: totalWei});
             const address = await contract.getAddress();
+
             setDeployedContractAddress(address);
             setIsFundModalOpen(false);
 
@@ -147,7 +141,8 @@ export const ProjectChatView: React.FC = () => {
             const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
 
             const stakeAmount = await contract.freelancerStake();
-            const tx = await contract.stakeFreelancer({ value: stakeAmount, gasLimit: 300000 });
+
+            const tx = await contract.stakeFreelancer({ value: stakeAmount });
             await tx.wait(1);
 
             setHasFreelancerStaked(true);
@@ -176,14 +171,34 @@ export const ProjectChatView: React.FC = () => {
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
 
-            const tx = await contract.claimRefund();
-            await tx.wait(1);
+            await contract.claimRefund();
 
+            const roomId = getRoomId();
             setIsContractCancelled(true);
 
             await supabase.from('notifications').insert([
-                { room_id: getRoomId(), wallet_address: activeChatWallet.toLowerCase(), content: `Employer claimed a refund due to a missed deadline. Project closed.` }
+                { room_id: roomId, wallet_address: activeChatWallet.toLowerCase(), content: `Employer claimed a refund due to a missed deadline. Project closed.` }
             ]);
+
+            // Database Cleanup
+            if (!roomId.includes('_')) {
+                await supabase.from('jobs').update({ status: 'cancelled' }).eq('id', roomId);
+                await supabase.from('applications').update({ status: 'cancelled' }).eq('job_id', roomId);
+            }
+
+            // Instantly wipe the chat from the Sidebar History view
+            setChatHistory(prev => {
+                const nextHistory = prev.filter(c => c.roomId !== roomId);
+                if (nextHistory.length > 0) {
+                    setActiveRoomId(nextHistory[0].roomId);
+                    setActiveChatWallet(nextHistory[0].walletAddress);
+                } else {
+                    setActiveRoomId('');
+                    setActiveChatWallet('');
+                    setMessages([]);
+                }
+                return nextHistory;
+            });
 
             alert("Refund successful. Remaining funds are back in your wallet.");
         } catch (error: any) {
@@ -263,8 +278,7 @@ export const ProjectChatView: React.FC = () => {
                 const provider = new ethers.BrowserProvider(window.ethereum);
                 const signer = await provider.getSigner();
                 const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
-                const tx = await contract.approveMilestone();
-                await tx.wait(1);
+                await contract.approveMilestone();
             }
 
             const { error: updateError } = await supabase.from('project_milestones').update({ status }).eq('id', activeMilestone.id);
@@ -291,18 +305,39 @@ export const ProjectChatView: React.FC = () => {
         if (!window.confirm("Are you sure you want to complete the project and close the chat?")) return;
         setIsProcessingMilestone(true);
         try {
+            const roomId = getRoomId();
             await supabase.from('messages').insert([{
                 content: `[System] Project Completed`,
                 sender_address: walletAddress!.toLowerCase(),
                 receiver_address: activeChatWallet.toLowerCase(),
-                room_id: getRoomId()
+                room_id: roomId
             }]);
 
             await supabase.from('notifications').insert([{
-                room_id: getRoomId(),
+                room_id: roomId,
                 wallet_address: activeChatWallet.toLowerCase(),
                 content: `Project completed. Thank you for your hard work. The employer has officially closed this contract.`
             }]);
+
+            // Database Cleanup
+            if (!roomId.includes('_')) {
+                await supabase.from('jobs').update({ status: 'completed' }).eq('id', roomId);
+                await supabase.from('applications').update({ status: 'completed' }).eq('job_id', roomId);
+            }
+
+            // Instantly wipe the chat from the Sidebar History view
+            setChatHistory(prev => {
+                const nextHistory = prev.filter(c => c.roomId !== roomId);
+                if (nextHistory.length > 0) {
+                    setActiveRoomId(nextHistory[0].roomId);
+                    setActiveChatWallet(nextHistory[0].walletAddress);
+                } else {
+                    setActiveRoomId('');
+                    setActiveChatWallet('');
+                    setMessages([]);
+                }
+                return nextHistory;
+            });
 
             setIsProjectCompleted(true);
         } catch (error) {
@@ -332,7 +367,7 @@ export const ProjectChatView: React.FC = () => {
         } catch (error) { console.error(error); } finally { setIsUploading(false); }
     };
 
-    // HISTORY FETCH (CASE SENSITIVE FIX)
+    // Load History sidebar, automatically dropping completed/cancelled chats
     useEffect(() => {
         if (!walletAddress) return;
         const lowerWallet = walletAddress.toLowerCase();
@@ -346,6 +381,7 @@ export const ProjectChatView: React.FC = () => {
                     const sender = msg.sender_address.toLowerCase();
                     const receiver = msg.receiver_address.toLowerCase();
                     const other = sender === lowerWallet ? receiver : sender;
+
                     const rId = msg.room_id || [sender, receiver].sort().join('_');
 
                     if (!historyMap.has(rId)) {
@@ -360,8 +396,30 @@ export const ProjectChatView: React.FC = () => {
                     }
                 });
 
-                const uniqueWallets = Array.from(new Set(Array.from(historyMap.values()).map(h => h.walletAddress)));
+                // Drop rooms where the job is completed or cancelled
+                const uniqueRoomIds = Array.from(historyMap.keys()).filter(id => !id.includes('_'));
+                if (uniqueRoomIds.length > 0) {
+                    const { data: jobsData } = await supabase.from('jobs').select('id, title, status').in('id', uniqueRoomIds);
+                    if (jobsData) {
+                        jobsData.forEach(job => {
+                            if (job.status === 'completed' || job.status === 'cancelled') {
+                                historyMap.delete(job.id);
+                            } else {
+                                const chat = historyMap.get(job.id);
+                                if (chat) chat.jobTitle = job.title;
+                            }
+                        });
+                    }
+                }
 
+                // Fallback drop for legacy chats
+                for (const [rId, chat] of historyMap.entries()) {
+                    if (chat.lastMessage.includes('Project Completed') || chat.lastMessage.includes('Contract Cancelled')) {
+                        historyMap.delete(rId);
+                    }
+                }
+
+                const uniqueWallets = Array.from(new Set(Array.from(historyMap.values()).map(h => h.walletAddress)));
                 if (uniqueWallets.length > 0) {
                     const { data: usersData } = await supabase.from('users').select('wallet_address, full_name').in('wallet_address', uniqueWallets);
                     if (usersData) {
@@ -377,16 +435,20 @@ export const ProjectChatView: React.FC = () => {
 
                 const arr = Array.from(historyMap.values()).sort((a, b) => b.timestamp - a.timestamp);
                 setChatHistory(arr);
-                if (arr.length > 0 && !activeRoomId) {
+
+                // If the active room was closed, jump to the next valid room, or clear view
+                if (arr.length > 0 && !historyMap.has(activeRoomId)) {
                     setActiveRoomId(arr[0].roomId);
                     setActiveChatWallet(arr[0].walletAddress);
+                } else if (arr.length === 0) {
+                    setActiveRoomId('');
+                    setActiveChatWallet('');
                 }
             }
         };
         fetchHistory();
     }, [walletAddress]);
 
-    // MESSAGES FETCH (CASE SENSITIVE FIX)
     useEffect(() => {
         if (!walletAddress || !activeRoomId || !activeChatWallet) return;
         const roomId = activeRoomId;
@@ -469,7 +531,7 @@ export const ProjectChatView: React.FC = () => {
                         <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-black">Deploy Escrow</h3><button onClick={() => setIsFundModalOpen(false)}><X size={20} /></button></div>
                         <Coins size={40} className="text-brand-600 mx-auto mb-4" />
                         <p className="text-sm text-zinc-600 mb-6">You are about to lock funds into the Polkadot Hub EVM contract for the defined milestones.</p>
-                        <button onClick={handleDeployEscrow} disabled={isDeploying} className="w-full py-4 bg-brand-600 text-white rounded-xl font-black uppercase">{isDeploying ? <Loader2 className="animate-spin mx-auto" /> : "Deploy & Fund Escrow"}</button>
+                        <button onClick={handleDeployEscrow} disabled={isDeploying} className="w-full py-4 bg-brand-600 text-white rounded-xl font-black uppercase">{isDeploying ? <Loader2 className="animate-spin mx-auto" /> : "Deploy and Fund Escrow"}</button>
                     </div>
                 </div>
             )}
@@ -516,8 +578,8 @@ export const ProjectChatView: React.FC = () => {
                         <div className="p-6 bg-zinc-50 border-t border-zinc-100">
                             <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest text-center mb-3">Final Employer Decision</p>
                             <div className="flex gap-3">
-                                <button onClick={() => handleMilestoneReview('rejected')} disabled={isProcessingMilestone} className="flex-1 py-4 border-2 border-red-200 text-red-600 rounded-xl font-black uppercase text-xs hover:bg-red-50 hover:border-red-300 transition-all">Reject & Dispute</button>
-                                <button onClick={() => handleMilestoneReview('approved')} disabled={isProcessingMilestone} className="flex-[2] py-4 bg-emerald-500 text-white rounded-xl font-black uppercase text-xs hover:bg-emerald-600 shadow-lg shadow-emerald-200 transition-all">Approve & Pay</button>
+                                <button onClick={() => handleMilestoneReview('rejected')} disabled={isProcessingMilestone} className="flex-1 py-4 border-2 border-red-200 text-red-600 rounded-xl font-black uppercase text-xs hover:bg-red-50 hover:border-red-300 transition-all">Reject and Dispute</button>
+                                <button onClick={() => handleMilestoneReview('approved')} disabled={isProcessingMilestone} className="flex-[2] py-4 bg-emerald-500 text-white rounded-xl font-black uppercase text-xs hover:bg-emerald-600 shadow-lg shadow-emerald-200 transition-all">Approve and Pay</button>
                             </div>
                         </div>
                     </div>
@@ -531,7 +593,8 @@ export const ProjectChatView: React.FC = () => {
                         <button key={chat.roomId} onClick={() => { setActiveRoomId(chat.roomId); setActiveChatWallet(chat.walletAddress); }} className={`w-full p-4 text-left border-b flex items-center gap-3 ${activeRoomId === chat.roomId ? 'bg-white border-l-4 border-l-brand-500 shadow-sm' : 'hover:bg-zinc-100/50'}`}>
                             <UserCircle className="text-zinc-400 flex-shrink-0" size={24} />
                             <div className="min-w-0 flex-1">
-                                <p className="text-xs font-black text-zinc-900 truncate">{chat.name}</p>
+                                <p className="text-xs font-black text-zinc-900 truncate">{chat.jobTitle || chat.name}</p>
+                                <p className="text-[10px] text-zinc-500 font-bold truncate">{chat.name}</p>
                                 <p className="text-[10px] text-zinc-400 truncate mt-1">{chat.lastMessage}</p>
                             </div>
                         </button>
@@ -541,171 +604,181 @@ export const ProjectChatView: React.FC = () => {
 
             <div className="flex-1 flex flex-col bg-white min-w-0 relative">
                 <div className="p-4 border-b font-black flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-10">
-                    <span className="text-zinc-900">{activeChatName}</span>
+                    <span className="text-zinc-900">{activeRoomId ? activeChatName : 'No Active Chat'}</span>
                 </div>
-                <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-zinc-50/20">
-                    {messages.filter(msg => !msg.content.startsWith('[System]')).map(msg => (
-                        <div key={msg.id} className={`flex ${msg.sender_address.toLowerCase() === walletAddress?.toLowerCase() ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`p-4 rounded-3xl max-w-[80%] overflow-hidden ${msg.sender_address.toLowerCase() === walletAddress?.toLowerCase() ? 'bg-brand-600 text-white rounded-tr-sm shadow-lg' : 'bg-white border text-zinc-800 rounded-tl-sm shadow-sm'}`}>
-                                <div className="text-sm whitespace-pre-wrap break-words break-all leading-relaxed">
-                                    {renderMessageContent(msg.content)}
+
+                {activeRoomId ? (
+                    <>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-zinc-50/20">
+                            {messages.filter(msg => !msg.content.startsWith('[System]')).map(msg => (
+                                <div key={msg.id} className={`flex ${msg.sender_address.toLowerCase() === walletAddress?.toLowerCase() ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`p-4 rounded-3xl max-w-[80%] overflow-hidden ${msg.sender_address.toLowerCase() === walletAddress?.toLowerCase() ? 'bg-brand-600 text-white rounded-tr-sm shadow-lg' : 'bg-white border text-zinc-800 rounded-tl-sm shadow-sm'}`}>
+                                        <div className="text-sm whitespace-pre-wrap break-words break-all leading-relaxed">
+                                            {renderMessageContent(msg.content)}
+                                        </div>
+                                    </div>
                                 </div>
+                            ))}
+                            <div ref={messagesEndRef} />
+                        </div>
+
+                        {filePreview && !isProjectCompleted && !isContractCancelled && (
+                            <div className="px-6 py-2 bg-zinc-50 border-t border-zinc-100 flex items-center gap-4">
+                                <div className="relative w-12 h-12 bg-white border border-zinc-200 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                                    {filePreview === 'file' ? <FileText size={20} className="text-zinc-400" /> : <img src={filePreview} alt="preview" className="object-cover w-full h-full" />}
+                                    <button onClick={clearFileSelection} className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg"><X size={10} /></button>
+                                </div>
+                                <p className="text-[10px] font-bold text-zinc-500 truncate flex-1">{selectedFile?.name}</p>
                             </div>
-                        </div>
-                    ))}
-                    <div ref={messagesEndRef} />
-                </div>
+                        )}
 
-                {filePreview && !isProjectCompleted && !isContractCancelled && (
-                    <div className="px-6 py-2 bg-zinc-50 border-t border-zinc-100 flex items-center gap-4">
-                        <div className="relative w-12 h-12 bg-white border border-zinc-200 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                            {filePreview === 'file' ? <FileText size={20} className="text-zinc-400" /> : <img src={filePreview} alt="preview" className="object-cover w-full h-full" />}
-                            <button onClick={clearFileSelection} className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg"><X size={10} /></button>
+                        <div className="p-4 bg-white border-t border-zinc-100">
+                            <form onSubmit={handleSendMessage} className="flex gap-2 max-w-4xl mx-auto items-end">
+                                <label className="p-3 bg-zinc-100 rounded-full cursor-pointer hover:bg-zinc-200 transition-all flex-shrink-0"><Paperclip size={18} /><input type="file" className="hidden" onChange={handleFileChange} disabled={isUploading || !activeRoomId} /></label>
+                                <textarea value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Type a message..." className="flex-1 p-3 bg-zinc-50 border border-zinc-200 rounded-2xl resize-none outline-none focus:bg-white focus:border-brand-500 transition-all shadow-inner" rows={1} />
+                                <button type="submit" disabled={isUploading} className="p-3 bg-brand-600 text-white rounded-full hover:bg-brand-700 shadow-lg transition-all flex-shrink-0">{isUploading ? <Loader2 className="animate-spin" /> : <Send size={18} />}</button>
+                            </form>
                         </div>
-                        <p className="text-[10px] font-bold text-zinc-500 truncate flex-1">{selectedFile?.name}</p>
-                    </div>
-                )}
-
-                {(isProjectCompleted || isContractCancelled) ? (
-                    <div className="p-4 bg-zinc-50 border-t border-zinc-100 flex items-center justify-center">
-                        <p className="text-zinc-500 font-bold text-xs uppercase tracking-widest">
-                            {isProjectCompleted ? "Project Completed. Chat Closed." : "Contract Cancelled. Chat Closed."}
-                        </p>
-                    </div>
+                    </>
                 ) : (
-                    <div className="p-4 bg-white border-t border-zinc-100">
-                        <form onSubmit={handleSendMessage} className="flex gap-2 max-w-4xl mx-auto items-end">
-                            <label className="p-3 bg-zinc-100 rounded-full cursor-pointer hover:bg-zinc-200 transition-all flex-shrink-0"><Paperclip size={18} /><input type="file" className="hidden" onChange={handleFileChange} disabled={isUploading || !activeRoomId} /></label>
-                            <textarea value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Type a message..." className="flex-1 p-3 bg-zinc-50 border border-zinc-200 rounded-2xl resize-none outline-none focus:bg-white focus:border-brand-500 transition-all shadow-inner" rows={1} />
-                            <button type="submit" disabled={isUploading} className="p-3 bg-brand-600 text-white rounded-full hover:bg-brand-700 shadow-lg transition-all flex-shrink-0">{isUploading ? <Loader2 className="animate-spin" /> : <Send size={18} />}</button>
-                        </form>
+                    <div className="flex-1 flex flex-col items-center justify-center bg-zinc-50/30">
+                        <MessageSquare size={48} className="text-zinc-200 mb-4" />
+                        <p className="text-zinc-400 font-bold text-xs uppercase tracking-widest">Inbox Empty</p>
                     </div>
                 )}
             </div>
 
-            <div className="hidden xl:flex flex-col w-96 border-l bg-white p-6 space-y-8 overflow-y-auto">
-                {notifications.length > 0 && (
-                    <div className="space-y-3 mb-6">
-                        <h3 className="text-sm font-black text-zinc-900 flex items-center gap-2"><Bell size={16} className="text-brand-600" /> Recent Alerts</h3>
-                        {notifications.map(n => (
-                            <div key={n.id} className="relative bg-blue-50/80 border border-blue-100 p-4 rounded-2xl pr-8 shadow-sm group">
-                                <button onClick={() => dismissNotification(n.id)} className="absolute top-3 right-3 text-blue-300 hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100"><X size={14}/></button>
-                                <p className="text-xs text-blue-900 font-medium leading-relaxed">{n.content}</p>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                <h2 className="text-xl font-black text-zinc-900">Project Hub</h2>
-
-                <div className="bg-brand-50 border border-brand-100 rounded-[2rem] p-6 shadow-sm">
-                    <div className="flex items-center gap-2 mb-4"><ShieldCheck className="text-brand-600" size={20} /><h3 className="text-sm font-black text-brand-900">Smart Escrow</h3></div>
-                    {!deployedContractAddress ? (
-                        <>
-                            {userRole === 'employer' ? (
-                                <button onClick={() => setIsFundModalOpen(true)} className="w-full py-3 bg-zinc-900 text-white rounded-xl text-xs font-black uppercase shadow-lg hover:bg-zinc-800 transition-all"><Coins size={16} className="inline mr-2" /> Fund Contract</button>
-                            ) : (
-                                <p className="text-[10px] text-center font-bold text-zinc-400 uppercase tracking-widest">Awaiting Employer Funding</p>
-                            )}
-                        </>
-                    ) : isContractCancelled ? (
-                        <div className="bg-red-50 text-red-700 p-3 rounded-xl border border-red-200 flex flex-col items-center justify-center gap-1">
-                            <AlertCircle size={16} />
-                            <span className="text-[10px] font-black uppercase">Contract Cancelled & Refunded</span>
-                        </div>
-                    ) : isProjectCompleted ? (
-                        <div className="bg-emerald-50 text-emerald-700 p-3 rounded-xl border border-emerald-100 flex flex-col items-center justify-center gap-1">
-                            <CheckCircle2 size={16} />
-                            <span className="text-[10px] font-black uppercase">Project Successfully Completed</span>
-                        </div>
-                    ) : (
-                        <div className="space-y-2">
-                            {userRole === 'freelancer' && (
-                                <>
-                                    {!hasFreelancerStaked ? (
-                                        <button onClick={handleFreelancerStake} disabled={isStaking} className="w-full py-3 bg-amber-500 text-white rounded-xl text-xs font-black uppercase shadow-lg hover:bg-amber-600 transition-all animate-pulse">
-                                            {isStaking ? <Loader2 className="animate-spin mx-auto" /> : "Stake 5% Security Deposit"}
-                                        </button>
-                                    ) : (
-                                        <div className="bg-emerald-50 text-emerald-700 p-3 rounded-xl border border-emerald-100 flex items-center justify-center gap-2"><CheckCircle2 size={16} /><span className="text-[10px] font-black uppercase">Funds Staked</span></div>
-                                    )}
-                                </>
-                            )}
-                            {userRole === 'employer' && (
-                                <>
-                                    <div className="bg-emerald-50 text-emerald-700 p-3 rounded-xl border border-emerald-100 flex flex-col items-center justify-center gap-1">
-                                        <CheckCircle2 size={16} /><span className="text-[10px] font-black uppercase">Escrow Locked</span><span className="text-[9px] font-mono break-all">{formatAddress(deployedContractAddress)}</span>
-                                    </div>
-
-                                    {(() => {
-                                        const pendingMilestone = milestones.find(m => m.status !== 'approved');
-                                        if (!pendingMilestone) return null;
-
-                                        const deadlineTime = new Date(pendingMilestone.due_date).getTime();
-                                        const isFiveDaysLate = Date.now() > deadlineTime + (5 * 24 * 60 * 60 * 1000);
-
-                                        if (hasFreelancerStaked && !isFiveDaysLate) return null;
-
-                                        return (
-                                            <div className="mt-4 border-t border-zinc-100 pt-4">
-                                                {!hasFreelancerStaked ? (
-                                                    <button onClick={handleClaimRefund} disabled={isProcessingMilestone} className="w-full py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700 transition-all">Cancel (No Stake Yet)</button>
-                                                ) : (
-                                                    <button onClick={handleClaimRefund} disabled={isProcessingMilestone} className="w-full py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700 transition-all shadow-md animate-pulse">Claim Late Refund</button>
-                                                )}
-                                            </div>
-                                        );
-                                    })()}
-                                </>
-                            )}
-                        </div>
-                    )}
-                </div>
-
-                <div className="space-y-4">
-                    <h3 className="text-sm font-black text-zinc-900 flex items-center gap-2"><Calendar size={16} className="text-brand-600"/> Milestones</h3>
-
-                    <div className="space-y-3">
-                        {milestones.length === 0 && <p className="text-[10px] text-zinc-400 text-center py-4 border-2 border-dashed border-zinc-100 rounded-2xl">No milestones set</p>}
-                        {milestones.map((m, index) => {
-                            const isAttentionNeeded = (userRole === 'employer' && m.status === 'submitted') || (userRole === 'freelancer' && m.status === 'rejected');
-
-                            return (
-                                <div key={m.id} className={`p-4 border rounded-2xl transition-all ${m.status === 'approved' ? 'bg-emerald-50 border-emerald-100' : isAttentionNeeded && !isContractCancelled && !isProjectCompleted ? 'bg-amber-50 border-amber-300 shadow-md animate-pulse' : 'bg-white border-zinc-200'}`}>
-                                    <div className="flex justify-between items-start mb-2">
-                                        <p className="text-xs font-black text-zinc-900 leading-tight">{index + 1}. {m.title}</p>
-                                        {m.status === 'pending' && <span className="text-[9px] font-bold px-2 py-1 bg-zinc-100 text-zinc-500 rounded-full flex items-center gap-1"><Clock size={10}/> Pending</span>}
-                                        {m.status === 'submitted' && <span className="text-[9px] font-bold px-2 py-1 bg-blue-50 text-blue-600 rounded-full">Review</span>}
-                                        {m.status === 'approved' && <span className="text-[9px] font-bold px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-1"><CheckCircle2 size={10}/> Done</span>}
-                                        {m.status === 'rejected' && <span className="text-[9px] font-bold px-2 py-1 bg-red-50 text-red-600 rounded-full flex items-center gap-1"><AlertCircle size={10}/> Revise</span>}
-                                    </div>
-                                    <div className="flex justify-between items-center mb-3">
-                                        <p className="text-[10px] text-zinc-500">Due: {new Date(m.due_date).toLocaleDateString()}</p>
-                                        <span className="text-[10px] font-black text-brand-600">{m.amount} PAS</span>
-                                    </div>
-
-                                    {userRole === 'freelancer' && (m.status === 'pending' || m.status === 'rejected') && !isContractCancelled && !isProjectCompleted && (
-                                        <button onClick={() => { setActiveMilestone(m); setIsSubmitMilestoneOpen(true); }} disabled={!hasFreelancerStaked} className="w-full py-2 bg-zinc-900 text-white rounded-xl text-[10px] font-black uppercase hover:bg-zinc-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                                            {!hasFreelancerStaked ? "Stake 5% to Unlock" : "Submit Work"}
-                                        </button>
-                                    )}
-                                    {userRole === 'employer' && m.status === 'submitted' && !isContractCancelled && !isProjectCompleted && (
-                                        <button onClick={() => { setActiveMilestone(m); setIsReviewMilestoneOpen(true); }} className="w-full py-2 bg-brand-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-brand-700 transition-all shadow-md">Review Action Needed</button>
-                                    )}
+            {activeRoomId ? (
+                <div className="hidden xl:flex flex-col w-96 border-l bg-white p-6 space-y-8 overflow-y-auto">
+                    {notifications.length > 0 && (
+                        <div className="space-y-3 mb-6">
+                            <h3 className="text-sm font-black text-zinc-900 flex items-center gap-2"><Bell size={16} className="text-brand-600" /> Recent Alerts</h3>
+                            {notifications.map(n => (
+                                <div key={n.id} className="relative bg-blue-50/80 border border-blue-100 p-4 rounded-2xl pr-8 shadow-sm group">
+                                    <button onClick={() => dismissNotification(n.id)} className="absolute top-3 right-3 text-blue-300 hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100"><X size={14}/></button>
+                                    <p className="text-xs text-blue-900 font-medium leading-relaxed">{n.content}</p>
                                 </div>
-                            );
-                        })}
-                    </div>
-
-                    {progress === 100 && !isProjectCompleted && userRole === 'employer' && (
-                        <div className="pt-4 border-t border-zinc-100 mt-4">
-                            <button onClick={handleCompleteProject} disabled={isProcessingMilestone} className="w-full py-3 bg-zinc-900 text-white rounded-xl text-xs font-black uppercase hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200">
-                                {isProcessingMilestone ? <Loader2 className="animate-spin mx-auto" /> : "Complete Project & Close Chat"}
-                            </button>
+                            ))}
                         </div>
                     )}
+
+                    <h2 className="text-xl font-black text-zinc-900">Project Hub</h2>
+
+                    <div className="bg-brand-50 border border-brand-100 rounded-[2rem] p-6 shadow-sm">
+                        <div className="flex items-center gap-2 mb-4"><ShieldCheck className="text-brand-600" size={20} /><h3 className="text-sm font-black text-brand-900">Smart Escrow</h3></div>
+                        {!deployedContractAddress ? (
+                            <>
+                                {userRole === 'employer' ? (
+                                    <button onClick={() => setIsFundModalOpen(true)} className="w-full py-3 bg-zinc-900 text-white rounded-xl text-xs font-black uppercase shadow-lg hover:bg-zinc-800 transition-all"><Coins size={16} className="inline mr-2" /> Fund Contract</button>
+                                ) : (
+                                    <p className="text-[10px] text-center font-bold text-zinc-400 uppercase tracking-widest">Awaiting Employer Funding</p>
+                                )}
+                            </>
+                        ) : isContractCancelled ? (
+                            <div className="bg-red-50 text-red-700 p-3 rounded-xl border border-red-200 flex flex-col items-center justify-center gap-1">
+                                <AlertCircle size={16} />
+                                <span className="text-[10px] font-black uppercase">Contract Cancelled and Refunded</span>
+                            </div>
+                        ) : isProjectCompleted ? (
+                            <div className="bg-emerald-50 text-emerald-700 p-3 rounded-xl border border-emerald-100 flex flex-col items-center justify-center gap-1">
+                                <CheckCircle2 size={16} />
+                                <span className="text-[10px] font-black uppercase">Project Successfully Completed</span>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {userRole === 'freelancer' && (
+                                    <>
+                                        {!hasFreelancerStaked ? (
+                                            <button onClick={handleFreelancerStake} disabled={isStaking} className="w-full py-3 bg-amber-500 text-white rounded-xl text-xs font-black uppercase shadow-lg hover:bg-amber-600 transition-all animate-pulse">
+                                                {isStaking ? <Loader2 className="animate-spin mx-auto" /> : "Stake 5% Security Deposit"}
+                                            </button>
+                                        ) : (
+                                            <div className="bg-emerald-50 text-emerald-700 p-3 rounded-xl border border-emerald-100 flex items-center justify-center gap-2"><CheckCircle2 size={16} /><span className="text-[10px] font-black uppercase">Funds Staked</span></div>
+                                        )}
+                                    </>
+                                )}
+                                {userRole === 'employer' && (
+                                    <>
+                                        <div className="bg-emerald-50 text-emerald-700 p-3 rounded-xl border border-emerald-100 flex flex-col items-center justify-center gap-1">
+                                            <CheckCircle2 size={16} /><span className="text-[10px] font-black uppercase">Escrow Locked</span><span className="text-[9px] font-mono break-all">{formatAddress(deployedContractAddress)}</span>
+                                        </div>
+
+                                        {(() => {
+                                            const pendingMilestone = milestones.find(m => m.status !== 'approved');
+                                            if (!pendingMilestone) return null;
+
+                                            const deadlineTime = new Date(pendingMilestone.due_date).getTime();
+                                            const isFiveDaysLate = Date.now() > deadlineTime + (5 * 24 * 60 * 60 * 1000);
+
+                                            if (hasFreelancerStaked && !isFiveDaysLate) return null;
+
+                                            return (
+                                                <div className="mt-4 border-t border-zinc-100 pt-4">
+                                                    {!hasFreelancerStaked ? (
+                                                        <button onClick={handleClaimRefund} disabled={isProcessingMilestone} className="w-full py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700 transition-all">Cancel (No Stake Yet)</button>
+                                                    ) : (
+                                                        <button onClick={handleClaimRefund} disabled={isProcessingMilestone} className="w-full py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700 transition-all shadow-md animate-pulse">Claim Late Refund</button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="space-y-4">
+                        <h3 className="text-sm font-black text-zinc-900 flex items-center gap-2"><Calendar size={16} className="text-brand-600"/> Milestones</h3>
+
+                        <div className="space-y-3">
+                            {milestones.length === 0 && <p className="text-[10px] text-zinc-400 text-center py-4 border-2 border-dashed border-zinc-100 rounded-2xl">No milestones set</p>}
+                            {milestones.map((m, index) => {
+                                const isAttentionNeeded = (userRole === 'employer' && m.status === 'submitted') || (userRole === 'freelancer' && m.status === 'rejected');
+
+                                return (
+                                    <div key={m.id} className={`p-4 border rounded-2xl transition-all ${m.status === 'approved' ? 'bg-emerald-50 border-emerald-100' : isAttentionNeeded && !isContractCancelled && !isProjectCompleted ? 'bg-amber-50 border-amber-300 shadow-md animate-pulse' : 'bg-white border-zinc-200'}`}>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <p className="text-xs font-black text-zinc-900 leading-tight">{index + 1}. {m.title}</p>
+                                            {m.status === 'pending' && <span className="text-[9px] font-bold px-2 py-1 bg-zinc-100 text-zinc-500 rounded-full flex items-center gap-1"><Clock size={10}/> Pending</span>}
+                                            {m.status === 'submitted' && <span className="text-[9px] font-bold px-2 py-1 bg-blue-50 text-blue-600 rounded-full">Review</span>}
+                                            {m.status === 'approved' && <span className="text-[9px] font-bold px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-1"><CheckCircle2 size={10}/> Done</span>}
+                                            {m.status === 'rejected' && <span className="text-[9px] font-bold px-2 py-1 bg-red-50 text-red-600 rounded-full flex items-center gap-1"><AlertCircle size={10}/> Revise</span>}
+                                        </div>
+                                        <div className="flex justify-between items-center mb-3">
+                                            <p className="text-[10px] text-zinc-500">Due: {new Date(m.due_date).toLocaleDateString()}</p>
+                                            <span className="text-[10px] font-black text-brand-600">{m.amount} PAS</span>
+                                        </div>
+
+                                        {userRole === 'freelancer' && (m.status === 'pending' || m.status === 'rejected') && !isContractCancelled && !isProjectCompleted && (
+                                            <button onClick={() => { setActiveMilestone(m); setIsSubmitMilestoneOpen(true); }} disabled={!hasFreelancerStaked} className="w-full py-2 bg-zinc-900 text-white rounded-xl text-[10px] font-black uppercase hover:bg-zinc-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                                                {!hasFreelancerStaked ? "Stake 5% to Unlock" : "Submit Work"}
+                                            </button>
+                                        )}
+                                        {userRole === 'employer' && m.status === 'submitted' && !isContractCancelled && !isProjectCompleted && (
+                                            <button onClick={() => { setActiveMilestone(m); setIsReviewMilestoneOpen(true); }} className="w-full py-2 bg-brand-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-brand-700 transition-all shadow-md">Review Action Needed</button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {progress === 100 && !isProjectCompleted && userRole === 'employer' && (
+                            <div className="pt-4 border-t border-zinc-100 mt-4">
+                                <button onClick={handleCompleteProject} disabled={isProcessingMilestone} className="w-full py-3 bg-zinc-900 text-white rounded-xl text-xs font-black uppercase hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200">
+                                    {isProcessingMilestone ? <Loader2 className="animate-spin mx-auto" /> : "Complete Project and Close Chat"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
+            ) : (
+                <div className="hidden xl:flex flex-col w-96 border-l bg-zinc-50/50 p-6 items-center justify-center">
+                    <ShieldCheck size={48} className="text-zinc-200 mb-4" />
+                    <p className="text-zinc-400 font-bold text-xs uppercase tracking-widest text-center">Project Hub Offline</p>
+                    <p className="text-zinc-400 text-[10px] text-center mt-2">Select an active project to view details.</p>
+                </div>
+            )}
         </div>
     );
 };

@@ -34,7 +34,7 @@ export const MarketplaceView: React.FC = () => {
     const [selectedJob, setSelectedJob] = useState<Job | null>(null);
     const [jobApplicants, setJobApplicants] = useState<Application[]>([]);
 
-    const [newJob, setNewJob] = useState({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', requirement: '', amount: '', duration_days: '7' }] });
+    const [newJob, setNewJob] = useState({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
     const [coverLetter, setCoverLetter] = useState('');
     const [resumeFile, setResumeFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -99,7 +99,7 @@ export const MarketplaceView: React.FC = () => {
             if (error) throw new Error("DB Error (Post Job): " + error.message);
 
             setIsPostModalOpen(false);
-            setNewJob({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', requirement: '', amount: '', duration_days: '7' }] });
+            setNewJob({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
             fetchData();
         } catch (err: any) {
             console.error(err);
@@ -120,7 +120,6 @@ export const MarketplaceView: React.FC = () => {
                 return;
             }
 
-            // NEW: Checker to prevent applying if working for this employer already
             const isAlreadyWorking = myApplications.some(app =>
                 app.jobs?.employer_address?.toLowerCase() === selectedJob.employer_address.toLowerCase() &&
                 (app.status === 'accepted' || app.status === 'pending_stake')
@@ -167,14 +166,11 @@ export const MarketplaceView: React.FC = () => {
         if (!selectedApplicant || !interviewDate || !interviewTime) return;
         setIsProcessing(true);
         try {
-            // 1. Call your custom Node.js backend to generate the Zoom meeting
             let meetingLink = '';
             try {
                 const zoomResponse = await fetch('http://localhost:3001/api/create-meeting', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
+                    headers: { 'Content-Type': 'application/json' }
                 });
 
                 if (!zoomResponse.ok) {
@@ -182,7 +178,6 @@ export const MarketplaceView: React.FC = () => {
                 }
 
                 const zoomData = await zoomResponse.json();
-
                 meetingLink = zoomData.join_url;
             } catch (zoomError) {
                 console.error("Zoom Generation Error:", zoomError);
@@ -191,12 +186,7 @@ export const MarketplaceView: React.FC = () => {
 
             const formattedDateTime = `${interviewDate} at ${interviewTime}`;
 
-            const { error } = await supabase.from('applications').update({
-                status: 'interviewing',
-                meeting_date: formattedDateTime,
-                meeting_link: meetingLink
-            }).eq('id', selectedApplicant.id);
-
+            const { error } = await supabase.from('applications').update({ status: 'interviewing', meeting_date: formattedDateTime, meeting_link: meetingLink }).eq('id', selectedApplicant.id);
             if (error) throw new Error("DB Error (Schedule): " + error.message);
 
             await supabase.from('notifications').insert([{
@@ -212,13 +202,11 @@ export const MarketplaceView: React.FC = () => {
             setInterviewTime('');
 
             setIsReviewModalOpen(true);
-            alert("Interview scheduled and Zoom link generated successfully!");
+            alert("Interview scheduled successfully!");
         } catch (err: any) {
             console.error(err);
             alert(err.message);
-        } finally {
-            setIsProcessing(false);
-        }
+        } finally { setIsProcessing(false); }
     };
 
     const handleAcceptApplicant = async (appId: string, freelancerAddr: string, jobToAccept: Job) => {
@@ -245,14 +233,8 @@ export const MarketplaceView: React.FC = () => {
             if (totalWei === 0n) throw new Error("Cannot deploy a contract with 0 budget.");
 
             const factory = new ethers.ContractFactory(ESCROW_ABI, ESCROW_BYTECODE, signer);
-            const contract = await factory.deploy(checksummedFreelancer, milestoneAmountsInWei, durationDaysArray, { value: totalWei, gasLimit: 3000000 });
 
-            const deployTx = contract.deploymentTransaction();
-            if (deployTx) {
-                await deployTx.wait(1);
-            } else {
-                await contract.waitForDeployment();
-            }
+            const contract = await factory.deploy(checksummedFreelancer, milestoneAmountsInWei, durationDaysArray, { value: totalWei });
             const contractAddress = await contract.getAddress();
 
             const { error: jobErr } = await supabase.from('jobs').update({ status: 'in-progress', contract_address: contractAddress }).eq('id', jobToAccept.id);
@@ -271,6 +253,7 @@ export const MarketplaceView: React.FC = () => {
 
             setIsReviewModalOpen(false);
             fetchData();
+            navigate('/chat');
         } catch (error: any) {
             console.error("Full Error:", error);
             if (error.code === 'CALL_EXCEPTION') {
@@ -291,8 +274,7 @@ export const MarketplaceView: React.FC = () => {
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(job.contract_address!, ESCROW_ABI, signer);
 
-            const tx = await contract.claimRefund();
-            await tx.wait(1);
+            await contract.claimRefund();
 
             await supabase.from('jobs').update({ status: 'cancelled' }).eq('id', job.id);
             await supabase.from('applications').update({ status: 'cancelled' }).eq('id', app.id);
@@ -318,13 +300,22 @@ export const MarketplaceView: React.FC = () => {
             if (!window.ethereum) throw new Error("Wallet not connected.");
             if (!app.jobs?.contract_address) throw new Error("Escrow contract not found.");
 
+            // Security Check: Ensure they didn't accidentally switch MetaMask accounts
+            if (walletAddress?.toLowerCase() !== app.freelancer_address.toLowerCase()) {
+                throw new Error("Wallet mismatch! Please connect the exact wallet you used to apply.");
+            }
+
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
             const checksummedContractAddr = ethers.getAddress(app.jobs.contract_address);
             const contract = new ethers.Contract(checksummedContractAddr, ESCROW_ABI, signer);
 
             const stakeAmount = await contract.freelancerStake();
-            const tx = await contract.stakeFreelancer({ value: stakeAmount, gasLimit: 300000 });
+
+            // Removed gasLimit so the network automatically calculates it
+            const tx = await contract.stakeFreelancer({ value: stakeAmount });
+
+            // We MUST wait for 1 block here. If the transaction fails, we do not want to update the database!
             await tx.wait(1);
 
             const roomId = app.job_id;
@@ -333,8 +324,7 @@ export const MarketplaceView: React.FC = () => {
                 const msToInsert = app.jobs.milestones_json.map((m: any) => {
                     const days = parseInt(m.duration_days) || 7;
                     const dueDate = new Date(Date.now() + days * 86400000).toISOString();
-                    const titleWithReq = m.requirement ? `${m.title} - Req: ${m.requirement}` : m.title;
-                    return { project_id: roomId, title: titleWithReq, amount: m.amount, duration_days: m.duration_days, status: 'pending', due_date: dueDate };
+                    return { project_id: roomId, title: m.title, amount: m.amount, duration_days: m.duration_days, status: 'pending', due_date: dueDate };
                 });
                 await supabase.from('project_milestones').insert(msToInsert);
             }
@@ -371,7 +361,7 @@ export const MarketplaceView: React.FC = () => {
 
     const displayJobs = activeTab === 'browse'
         ? jobs.filter(j => j.status === 'open' && j.employer_address.toLowerCase() !== walletAddress?.toLowerCase())
-        : jobs.filter(j => j.employer_address.toLowerCase() === walletAddress?.toLowerCase());
+        : jobs.filter(j => j.employer_address.toLowerCase() === walletAddress?.toLowerCase() && j.status !== 'completed' && j.status !== 'cancelled');
 
     return (
         <div className="p-4 md:p-6 space-y-8 relative">
@@ -462,7 +452,6 @@ export const MarketplaceView: React.FC = () => {
                         <div className="col-span-full text-center py-10 text-zinc-500 font-medium border-2 border-dashed border-zinc-200 rounded-3xl">No jobs found.</div>
                     ) : (
                         displayJobs.map((job, i) => {
-                            // NEW: Pre-calculate states for the Grid Cards
                             const hasApplied = myApplications.some(app => app.job_id === job.id);
                             const isWorkingForEmployer = myApplications.some(app =>
                                 app.jobs?.employer_address?.toLowerCase() === job.employer_address.toLowerCase() &&
@@ -502,10 +491,9 @@ export const MarketplaceView: React.FC = () => {
                                             hasApplied ? (
                                                 <span className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1 border border-emerald-100"><CheckCircle2 size={14}/> Applied</span>
                                             ) : isWorkingForEmployer ? (
-                                                // NEW: Show "Active Contract" tag if they are currently working for this employer
                                                 <span className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1 border border-amber-100"><AlertCircle size={14}/> Active Contract</span>
                                             ) : (
-                                                <span className="bg-brand-50 text-brand-600 px-3 py-1.5 rounded-xl font-black text-xs">View Details →</span>
+                                                <span className="bg-brand-50 text-brand-600 px-3 py-1.5 rounded-xl font-black text-xs">View Details</span>
                                             )
                                         ) : (
                                             <span className="bg-zinc-900 text-white px-3 py-1.5 rounded-xl font-black text-xs">View Applicants</span>
@@ -560,8 +548,8 @@ export const MarketplaceView: React.FC = () => {
                             <div className="flex flex-wrap gap-2 mb-6">
                                 {selectedJob.experience_level && <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">{selectedJob.experience_level} Level</span>}
                                 {selectedJob.project_type && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">{selectedJob.project_type}</span>}
-                                <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-3 py-1 rounded-full">🌐 Remote</span>
-                                {selectedJob.deadline && <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">📅 Due {new Date(selectedJob.deadline).toLocaleDateString()}</span>}
+                                <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-3 py-1 rounded-full">Remote</span>
+                                {selectedJob.deadline && <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">Due {new Date(selectedJob.deadline).toLocaleDateString()}</span>}
                             </div>
                         </div>
 
@@ -587,22 +575,15 @@ export const MarketplaceView: React.FC = () => {
                                     <h4 className="text-xs font-black uppercase tracking-widest text-zinc-400 mb-3">Payment Milestones</h4>
                                     <div className="space-y-2">
                                         {selectedJob.milestones_json.map((ms: any, i: number) => (
-                                            <div key={i} className="flex flex-col gap-2 bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                                                <div className="flex justify-between items-start w-full">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-black flex items-center justify-center shrink-0">{i + 1}</span>
-                                                        <span className="text-sm font-bold text-zinc-800 break-words">{ms.title}</span>
-                                                    </div>
-                                                    <div className="text-right shrink-0 ml-4">
-                                                        <p className="text-sm font-black text-zinc-900">{ms.amount} PAS</p>
-                                                        <p className="text-[10px] text-zinc-400">{ms.duration_days} days</p>
-                                                    </div>
+                                            <div key={i} className="flex justify-between items-center bg-zinc-50 p-4 rounded-xl border border-zinc-100">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-black flex items-center justify-center">{i + 1}</span>
+                                                    <span className="text-sm font-bold text-zinc-800">{ms.title}</span>
                                                 </div>
-                                                {ms.requirement && (
-                                                    <div className="pl-9 pr-2">
-                                                        <p className="text-xs text-zinc-500 font-medium bg-white p-2 rounded-lg border border-zinc-100 break-words"><span className="font-bold text-zinc-700">Requirement:</span> {ms.requirement}</p>
-                                                    </div>
-                                                )}
+                                                <div className="text-right">
+                                                    <p className="text-sm font-black text-zinc-900">{ms.amount} PAS</p>
+                                                    <p className="text-[10px] text-zinc-400">{ms.duration_days} days</p>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -613,7 +594,6 @@ export const MarketplaceView: React.FC = () => {
                                 {selectedJob.tags.map(tag => (<span key={tag} className="text-[10px] font-black uppercase tracking-wider text-zinc-500 bg-zinc-100 px-3 py-1.5 rounded-lg">{tag}</span>))}
                             </div>
 
-                            {/* CTA Logic - Prevents Application */}
                             {(() => {
                                 const hasApplied = myApplications.some(app => app.job_id === selectedJob.id);
                                 const isWorkingForEmployer = myApplications.some(app =>
@@ -645,7 +625,7 @@ export const MarketplaceView: React.FC = () => {
                                             onClick={() => { setIsDetailModalOpen(false); setIsApplyModalOpen(true); }}
                                             className="w-full py-4 bg-brand-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-brand-700 transition-all shadow-xl shadow-brand-600/20"
                                         >
-                                            Apply Now →
+                                            Apply Now
                                         </button>
                                     );
                                 }
@@ -663,7 +643,7 @@ export const MarketplaceView: React.FC = () => {
                         <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-black">Post a New Job</h3><button onClick={() => setIsPostModalOpen(false)}><X size={20} /></button></div>
                         <form onSubmit={handlePostJob} className="space-y-4">
                             <input type="text" value={newJob.title} onChange={e => setNewJob({...newJob, title: e.target.value})} placeholder="Job Title" className="w-full p-4 border rounded-xl" required />
-                            <textarea value={newJob.description} onChange={e => setNewJob({...newJob, description: e.target.value})} placeholder="Detailed Description — explain scope, deliverables, and expectations..." className="w-full h-36 p-4 border rounded-xl resize-none" required />
+                            <textarea value={newJob.description} onChange={e => setNewJob({...newJob, description: e.target.value})} placeholder="Detailed Description - explain scope, deliverables, and expectations" className="w-full h-36 p-4 border rounded-xl resize-none" required />
                             <input type="text" value={newJob.tags} onChange={e => setNewJob({...newJob, tags: e.target.value})} placeholder="Skills / Tags (comma separated, e.g. React, Solidity)" className="w-full p-4 border rounded-xl" required />
 
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -691,21 +671,16 @@ export const MarketplaceView: React.FC = () => {
                             <div className="border-t border-zinc-100 pt-6 mt-2">
                                 <div className="flex justify-between items-center mb-4">
                                     <div><h4 className="font-black text-sm text-zinc-900">Payment Milestones</h4><p className="text-[10px] text-zinc-500">Break your project into paid deliverables.</p></div>
-                                    <button type="button" onClick={() => setNewJob({...newJob, milestones: [...newJob.milestones, {title: '', requirement: '', amount: '', duration_days: '7'}]})} className="text-xs font-bold text-brand-600 flex items-center gap-1 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg"><Plus size={14} /> Add Milestone</button>
+                                    <button type="button" onClick={() => setNewJob({...newJob, milestones: [...newJob.milestones, {title: '', amount: '', duration_days: '7'}]})} className="text-xs font-bold text-brand-600 flex items-center gap-1 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg"><Plus size={14} /> Add Milestone</button>
                                 </div>
                                 <div className="space-y-3">
                                     {newJob.milestones.map((ms, index) => (
-                                        <div key={index} className="flex flex-col gap-2 bg-zinc-50 p-3 rounded-xl border border-zinc-100">
-                                            <div className="flex gap-2 items-center">
-                                                <span className="text-xs font-black text-zinc-400 pl-1 w-4">{index + 1}.</span>
-                                                <input type="text" value={ms.title} onChange={e => { const u = [...newJob.milestones]; u[index].title = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
-                                                <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...newJob.milestones]; u[index].amount = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
-                                                <input type="number" value={ms.duration_days} onChange={e => { const u = [...newJob.milestones]; u[index].duration_days = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
-                                                {index > 0 && <button type="button" onClick={() => { const u = [...newJob.milestones]; u.splice(index, 1); setNewJob({...newJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg shrink-0"><Trash2 size={16} /></button>}
-                                            </div>
-                                            <div className="pl-7 pr-1">
-                                                <input type="text" value={ms.requirement || ''} onChange={e => { const u = [...newJob.milestones]; u[index].requirement = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Requirement (e.g. Figma link, specific feature)" className="w-full p-3 border rounded-lg text-sm bg-white" required />
-                                            </div>
+                                        <div key={index} className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-100">
+                                            <span className="text-xs font-black text-zinc-400 pl-2">{index + 1}.</span>
+                                            <input type="text" value={ms.title} onChange={e => { const u = [...newJob.milestones]; u[index].title = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
+                                            <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...newJob.milestones]; u[index].amount = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
+                                            <input type="number" value={ms.duration_days} onChange={e => { const u = [...newJob.milestones]; u[index].duration_days = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
+                                            {index > 0 && <button type="button" onClick={() => { const u = [...newJob.milestones]; u.splice(index, 1); setNewJob({...newJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>}
                                         </div>
                                     ))}
                                 </div>
@@ -748,7 +723,7 @@ export const MarketplaceView: React.FC = () => {
                                                     {isProcessing ? (
                                                         <><Loader2 size={14} className="animate-spin" /> Deploying Contract...</>
                                                     ) : (
-                                                        "Accept & Hire"
+                                                        "Accept and Hire"
                                                     )}
                                                 </button>
                                             )}

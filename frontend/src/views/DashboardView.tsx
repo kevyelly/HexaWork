@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, User, Clock, Calendar as CalendarIcon, FileText, CheckCircle, Loader2, Video } from 'lucide-react';
+import { Briefcase, User, Clock, Calendar as CalendarIcon, FileText, CheckCircle, CheckCircle2, AlertTriangle, Loader2, Video } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useWallet } from '../lib/WalletContext';
 import { cn } from '../utils';
@@ -26,8 +26,11 @@ export const DashboardView: React.FC = () => {
 
     // Dynamic Stats & Meetings
     const [stats, setStats] = useState({ stat1: 0, stat2: 0, stat3: 0 });
+    const [metrics, setMetrics] = useState({ active: 0, approvals: 0, pending: 0, disputes: 0 });
     const [activeProjects, setActiveProjects] = useState<any[]>([]);
     const [upcomingMeetings, setUpcomingMeetings] = useState<any[]>([]);
+
+    const formatAddress = (address: string) => `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
 
     useEffect(() => {
         if (walletAddress) {
@@ -76,6 +79,7 @@ export const DashboardView: React.FC = () => {
     };
 
     const fetchDashboardData = async (role: string, wallet: string) => {
+        // --- Role-specific stats for StatCards ---
         if (role === 'freelancer') {
             const [ongoing, pending, completed, projectsRes, meetingsRes] = await Promise.all([
                 supabase.from('applications').select('*', { count: 'exact' }).eq('freelancer_address', wallet).eq('status', 'accepted'),
@@ -84,18 +88,14 @@ export const DashboardView: React.FC = () => {
                 supabase.from('applications').select('*, jobs(*)').eq('freelancer_address', wallet).eq('status', 'accepted').limit(5),
                 supabase.from('applications').select('*, jobs(title)').eq('freelancer_address', wallet).eq('status', 'interviewing')
             ]);
-
             setStats({ stat1: ongoing.count || 0, stat2: pending.count || 0, stat3: completed.count || 0 });
             if (projectsRes.data) setActiveProjects(projectsRes.data);
             if (meetingsRes.data) setUpcomingMeetings(meetingsRes.data.filter(m => m.meeting_date));
-
         } else {
             const jobsRes = await supabase.from('jobs').select('id').eq('employer_address', wallet);
             const jobIds = jobsRes.data ? jobsRes.data.map(j => j.id) : [];
-
             let appsToReviewCount = 0;
             let fetchedMeetings: any[] = [];
-
             if (jobIds.length > 0) {
                 const [appsRes, meetingsRes] = await Promise.all([
                     supabase.from('applications').select('*', { count: 'exact' }).in('job_id', jobIds).eq('status', 'pending'),
@@ -104,17 +104,42 @@ export const DashboardView: React.FC = () => {
                 appsToReviewCount = appsRes.count || 0;
                 if (meetingsRes.data) fetchedMeetings = meetingsRes.data.filter(m => m.meeting_date);
             }
-
             const [posted, ongoing, projectsRes] = await Promise.all([
                 supabase.from('jobs').select('*', { count: 'exact' }).eq('employer_address', wallet),
                 supabase.from('jobs').select('*', { count: 'exact' }).eq('employer_address', wallet).eq('status', 'in-progress'),
                 supabase.from('jobs').select('*').eq('employer_address', wallet).eq('status', 'in-progress').limit(5)
             ]);
-
             setStats({ stat1: posted.count || 0, stat2: ongoing.count || 0, stat3: appsToReviewCount });
             if (projectsRes.data) setActiveProjects(projectsRes.data);
             setUpcomingMeetings(fetchedMeetings);
         }
+
+        // --- Global metrics (the 4-card overview) ---
+        const [employerJobsRes, freelancerAppsRes, approvalsRes, freelancerPendingRes, disputesRes, myJobsRes] = await Promise.all([
+            supabase.from('jobs').select('*', { count: 'exact', head: true }).ilike('employer_address', wallet).eq('status', 'in-progress'),
+            supabase.from('applications').select('*', { count: 'exact', head: true }).ilike('freelancer_address', wallet).eq('status', 'accepted'),
+            supabase.from('project_milestones').select('*', { count: 'exact', head: true }).eq('status', 'submitted').ilike('project_id', `%${wallet}%`),
+            supabase.from('applications').select('*', { count: 'exact', head: true }).ilike('freelancer_address', wallet).eq('status', 'pending'),
+            supabase.from('project_milestones').select('*', { count: 'exact', head: true }).eq('status', 'rejected').ilike('project_id', `%${wallet}%`),
+            supabase.from('jobs').select('id').ilike('employer_address', wallet),
+        ]);
+
+        const totalActive = (employerJobsRes.count || 0) + (freelancerAppsRes.count || 0);
+
+        let employerPendingCount = 0;
+        if (myJobsRes.data && myJobsRes.data.length > 0) {
+            const jobIds = myJobsRes.data.map((j: any) => j.id);
+            const { count } = await supabase.from('applications').select('*', { count: 'exact', head: true }).in('job_id', jobIds).eq('status', 'pending');
+            employerPendingCount = count || 0;
+        }
+
+        setMetrics({
+            active: totalActive,
+            approvals: approvalsRes.count || 0,
+            pending: (freelancerPendingRes.count || 0) + employerPendingCount,
+            disputes: disputesRes.count || 0,
+        });
+
         setIsLoading(false);
     };
 
@@ -162,7 +187,7 @@ export const DashboardView: React.FC = () => {
                 <>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div>
-                            <h1 className="text-2xl md:text-3xl font-extrabold text-zinc-900 tracking-tight">Welcome back, {profile.full_name}!</h1>
+                            <h1 className="text-2xl md:text-3xl font-extrabold text-zinc-900 tracking-tight">Welcome back, {profile.full_name}! 👋</h1>
                             <p className="text-zinc-500 font-medium">Here is what is happening with your account today.</p>
                         </div>
                         <div className="px-4 py-2 bg-zinc-100 text-zinc-600 rounded-xl font-bold text-sm uppercase tracking-widest border border-zinc-200">
@@ -170,18 +195,49 @@ export const DashboardView: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                    {/* 4-metric overview */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                        {[
+                            { label: 'Active Escrows',        value: metrics.active,    change: 'In Progress', icon: Briefcase,     color: 'text-indigo-600', bg: 'bg-indigo-50',  emoji: '🔒' },
+                            { label: 'Pending Approvals',     value: metrics.approvals, change: 'Action Req',  icon: CheckCircle2,  color: 'text-amber-600',  bg: 'bg-amber-50',   emoji: '⏳' },
+                            { label: 'Pending Applications',  value: metrics.pending,   change: 'Marketplace', icon: FileText,      color: 'text-emerald-600',bg: 'bg-emerald-50', emoji: '📋' },
+                            { label: 'Recent Disputes',       value: metrics.disputes,  change: 'All Good',    icon: AlertTriangle, color: 'text-zinc-400',   bg: 'bg-zinc-100',   emoji: '⚖️'  },
+                        ].map((stat, i) => (
+                            <motion.div
+                                key={stat.label}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: i * 0.1 }}
+                                className="bg-white p-6 rounded-[2rem] border border-zinc-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group"
+                            >
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className={cn('p-4 rounded-2xl transition-transform group-hover:scale-110', stat.bg)}>
+                                        <stat.icon className={stat.color} size={28} />
+                                    </div>
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded-full mb-1">{stat.change}</span>
+                                        <span className="text-xl">{stat.emoji}</span>
+                                    </div>
+                                </div>
+                                <p className="text-zinc-500 text-sm font-bold uppercase tracking-wider">{stat.label}</p>
+                                <h3 className="text-2xl md:text-3xl font-black text-zinc-900 mt-1">{stat.value}</h3>
+                            </motion.div>
+                        ))}
+                    </div>
+
+                    {/* Role-specific quick-nav cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         {profile.role === 'freelancer' ? (
                             <>
-                                <StatCard label="Ongoing Jobs" value={stats.stat1} icon={Briefcase} color="text-brand-600" bg="bg-brand-50" onClick={() => navigate('/dashboard/summary/ongoing')} />
-                                <StatCard label="Pending Apps" value={stats.stat2} icon={Clock} color="text-indigo-600" bg="bg-indigo-50" onClick={() => navigate('/dashboard/summary/pending')} />
-                                <StatCard label="Completed Jobs" value={stats.stat3} icon={CheckCircle} color="text-emerald-600" bg="bg-emerald-50" onClick={() => navigate('/dashboard/summary/completed')} />
+                                <StatCard label="Ongoing Jobs"   value={stats.stat1} icon={Briefcase}    color="text-brand-600"   bg="bg-brand-50"   onClick={() => navigate('/dashboard/summary/ongoing')} />
+                                <StatCard label="Pending Apps"   value={stats.stat2} icon={Clock}        color="text-indigo-600" bg="bg-indigo-50"  onClick={() => navigate('/dashboard/summary/pending')} />
+                                <StatCard label="Completed Jobs" value={stats.stat3} icon={CheckCircle}  color="text-emerald-600" bg="bg-emerald-50" onClick={() => navigate('/dashboard/summary/completed')} />
                             </>
                         ) : (
                             <>
-                                <StatCard label="Jobs Posted" value={stats.stat1} icon={FileText} color="text-brand-600" bg="bg-brand-50" onClick={() => navigate('/jobmarket', { state: { tab: 'my-jobs' } })} />
-                                <StatCard label="Ongoing Jobs" value={stats.stat2} icon={Briefcase} color="text-indigo-600" bg="bg-indigo-50" onClick={() => navigate('/dashboard/summary/ongoing')} />
-                                <StatCard label="Apps to Review" value={stats.stat3} icon={User} color="text-amber-600" bg="bg-amber-50" onClick={() => navigate('/dashboard/summary/review')} />
+                                <StatCard label="Jobs Posted"    value={stats.stat1} icon={FileText}  color="text-brand-600"   bg="bg-brand-50"  onClick={() => navigate('/jobmarket', { state: { tab: 'my-jobs' } })} />
+                                <StatCard label="Ongoing Jobs"   value={stats.stat2} icon={Briefcase} color="text-indigo-600" bg="bg-indigo-50" onClick={() => navigate('/dashboard/summary/ongoing')} />
+                                <StatCard label="Apps to Review" value={stats.stat3} icon={User}      color="text-amber-600"  bg="bg-amber-50"  onClick={() => navigate('/dashboard/summary/review')} />
                             </>
                         )}
                     </div>

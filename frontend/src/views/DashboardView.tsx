@@ -5,14 +5,17 @@ import { CreditCard, Briefcase, Shield, User, Clock, Calendar as CalendarIcon, C
 import { cn } from '../utils';
 import { useWallet } from '../lib/WalletContext';
 import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
-export const DashboardView: React.FC = () => {
+export const DashboardView: React.FC<any> = () => {
   const { walletAddress } = useWallet();
+  const navigate = useNavigate();
   const formatAddress = (address: string) => `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   
   interface ActiveProject { id: string; title: string; budget: string; client: string; status: string; progress: number; }
   const [metrics, setMetrics] = useState({ active: 0, approvals: 0, pending: 0, disputes: 0 });
   const [activeProjects, setActiveProjects] = useState<ActiveProject[]>([]);
+  const [userName, setUserName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -25,6 +28,11 @@ export const DashboardView: React.FC = () => {
       const addrLower = walletAddress.toLowerCase();
 
       try {
+        const { data: userProfile } = await supabase.from('users').select('full_name').eq('wallet_address', addrLower).single();
+        if (userProfile && userProfile.full_name) {
+          setUserName(userProfile.full_name);
+        }
+
         const { count: employerJobsCount } = await supabase
           .from('jobs')
           .select('*', { count: 'exact', head: true })
@@ -133,21 +141,21 @@ export const DashboardView: React.FC = () => {
   }, [walletAddress]);
 
   return (
-  <div className="p-4 md:p-6 space-y-8">
-    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-zinc-900 tracking-tight">
-          Welcome back{walletAddress ? `, ${formatAddress(walletAddress)}` : ''}! 👋
-        </h1>
-        <p className="text-zinc-500 font-medium">You've got 3 milestones to crush today. Let's do this!</p>
+    <div className="p-4 md:p-6 space-y-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-extrabold text-zinc-900 tracking-tight">
+            Welcome back{userName ? `, ${userName}` : (walletAddress ? `, ${formatAddress(walletAddress)}` : '')}! 👋
+          </h1>
+          <p className="text-zinc-500 font-medium">You've got 3 milestones to crush today. Let's do this!</p>
+        </div>
+        <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-zinc-200 shadow-sm w-full sm:w-auto">
+          <button className="flex-1 sm:flex-none px-4 py-2 bg-brand-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-brand-500/20">Freelancer</button>
+          <button className="flex-1 sm:flex-none px-4 py-2 text-zinc-500 font-bold text-sm hover:bg-zinc-50 rounded-xl">Client</button>
+        </div>
       </div>
-      <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-zinc-200 shadow-sm w-full sm:w-auto">
-        <button className="flex-1 sm:flex-none px-4 py-2 bg-brand-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-brand-500/20">Freelancer</button>
-        <button className="flex-1 sm:flex-none px-4 py-2 text-zinc-500 font-bold text-sm hover:bg-zinc-50 rounded-xl">Client</button>
-      </div>
-    </div>
 
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
       {[
         { label: 'Active Escrows', value: metrics.active.toString(), change: 'In Progress', icon: Briefcase, color: 'text-indigo-600', bg: 'bg-indigo-50', emoji: '🔒' },
         { label: 'Pending Approvals', value: metrics.approvals.toString(), change: 'Action Req', icon: CheckCircle2, color: 'text-amber-600', bg: 'bg-amber-50', emoji: '⏳' },
@@ -237,7 +245,7 @@ export const DashboardView: React.FC = () => {
             </div>
           ))}
         </div>
-        <button className="w-full mt-8 py-4 bg-zinc-100 text-zinc-600 font-bold rounded-2xl hover:bg-zinc-200 transition-all flex items-center justify-center gap-2">
+        <button onClick={() => navigate('/calendar')} className="w-full mt-8 py-4 bg-zinc-100 text-zinc-600 font-bold rounded-2xl hover:bg-zinc-200 transition-all flex items-center justify-center gap-2">
           <CalendarIcon size={18} />
           Open Full Calendar
         </button>

@@ -17,6 +17,8 @@ import {
     Menu,
     X,
     HelpCircle,
+    Calendar,
+    UserCircle
 } from "lucide-react";
 import { View } from "./types";
 import { motion, AnimatePresence } from "motion/react";
@@ -26,9 +28,9 @@ import { Header } from "./components/Header";
 import { DashboardView } from "./views/DashboardView";
 import { MarketplaceView } from "./views/MarketplaceView";
 import { ProjectChatView } from "./views/ProjectChatView";
+import { CalendarView } from "./views/CalendarView";
+import { ProfileView } from "./views/ProfileView";
 import { LandingPageView } from "./views/LandingPageView";
-import { LoginView } from "./views/LoginView";
-import { SignUpView } from "./views/SignUpView";
 
 function AppContent() {
     const location = useLocation();
@@ -39,17 +41,13 @@ function AppContent() {
     if (location.pathname === "/") {
         return <LandingPageView onNavigate={(view) => navigate(`/${view}`)} />;
     }
-    if (location.pathname === "/login") {
-        return <LoginView onNavigate={(view) => navigate(`/${view}`)} />;
-    }
-    if (location.pathname === "/signup") {
-        return <SignUpView onNavigate={(view) => navigate(`/${view}`)} />;
-    }
 
     const navItems = [
         { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
         { path: "/jobmarket", icon: Briefcase, label: "Marketplace" },
         { path: "/chat", icon: MessageSquare, label: "Messages" },
+        { path: "/calendar", icon: Calendar, label: "Calendar" },
+        { path: "/profile", icon: UserCircle, label: "Profile" },
     ];
 
     const handleNavClick = (path: string) => {
@@ -182,6 +180,8 @@ function AppContent() {
                                 element={<MarketplaceView />}
                             />
                             <Route path="/chat" element={<ProjectChatView />} />
+                            <Route path="/calendar" element={<CalendarView />} />
+                            <Route path="/profile" element={<ProfileView />} />
 
                             <Route
                                 path="*"

@@ -1,256 +1,271 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { PROJECTS, MILESTONES } from '../constants';
-import { CreditCard, Briefcase, Shield, User, Clock, Calendar as CalendarIcon, ChevronRight, CheckCircle2, FileText, AlertTriangle, Loader2 } from 'lucide-react';
-import { cn } from '../utils';
-import { useWallet } from '../lib/WalletContext';
-import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { Briefcase, User, Clock, Calendar as CalendarIcon, FileText, CheckCircle, Loader2, Video } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useWallet } from '../lib/WalletContext';
+import { cn } from '../utils';
 
-export const DashboardView: React.FC<any> = () => {
-  const { walletAddress } = useWallet();
-  const navigate = useNavigate();
-  const formatAddress = (address: string) => `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-  
-  interface ActiveProject { id: string; title: string; budget: string; client: string; status: string; progress: number; }
-  const [metrics, setMetrics] = useState({ active: 0, approvals: 0, pending: 0, disputes: 0 });
-  const [activeProjects, setActiveProjects] = useState<ActiveProject[]>([]);
-  const [userName, setUserName] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+interface UserProfile {
+    wallet_address: string;
+    full_name: string;
+    role: 'freelancer' | 'employer';
+}
 
-  useEffect(() => {
-    const fetchMetrics = async () => {
-      if (!walletAddress) {
-        setIsLoading(false);
-        return;
-      }
-      setIsLoading(true);
-      const addrLower = walletAddress.toLowerCase();
+export const DashboardView: React.FC = () => {
+    const { walletAddress } = useWallet();
+    const navigate = useNavigate();
+    const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-      try {
-        const { data: userProfile } = await supabase.from('users').select('full_name').eq('wallet_address', addrLower).single();
-        if (userProfile && userProfile.full_name) {
-          setUserName(userProfile.full_name);
+    // Registration State
+    const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+    const [regName, setRegName] = useState('');
+    const [regRole, setRegRole] = useState<'freelancer' | 'employer'>('freelancer');
+    const [isSaving, setIsSaving] = useState(false);
+
+    // Dynamic Stats & Meetings
+    const [stats, setStats] = useState({ stat1: 0, stat2: 0, stat3: 0 });
+    const [activeProjects, setActiveProjects] = useState<any[]>([]);
+    const [upcomingMeetings, setUpcomingMeetings] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (walletAddress) {
+            checkAndFetchProfile();
         }
+    }, [walletAddress]);
 
-        const { count: employerJobsCount } = await supabase
-          .from('jobs')
-          .select('*', { count: 'exact', head: true })
-          .ilike('employer_address', addrLower)
-          .eq('status', 'in-progress');
+    const checkAndFetchProfile = async () => {
+        setIsLoading(true);
+        const lowerWallet = walletAddress!.toLowerCase();
 
-        const { count: freelancerAppsCount } = await supabase
-          .from('applications')
-          .select('*', { count: 'exact', head: true })
-          .ilike('freelancer_address', addrLower)
-          .eq('status', 'accepted');
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('wallet_address', lowerWallet)
+            .single();
 
-        const totalActive = (employerJobsCount || 0) + (freelancerAppsCount || 0);
-
-        const { count: approvalsCount } = await supabase
-          .from('project_milestones')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'submitted')
-          .ilike('project_id', `%${addrLower}%`);
-
-        const { count: freelancerPendingCount } = await supabase
-          .from('applications')
-          .select('*', { count: 'exact', head: true })
-          .ilike('freelancer_address', addrLower)
-          .eq('status', 'pending');
-
-        const { data: myJobs } = await supabase
-          .from('jobs')
-          .select('id')
-          .ilike('employer_address', addrLower);
-          
-        let employerPendingCount = 0;
-        if (myJobs && myJobs.length > 0) {
-          const jobIds = myJobs.map(j => j.id);
-          const { count } = await supabase
-            .from('applications')
-            .select('*', { count: 'exact', head: true })
-            .in('job_id', jobIds)
-            .eq('status', 'pending');
-          employerPendingCount = count || 0;
+        if (data) {
+            setProfile(data);
+            await fetchDashboardData(data.role, lowerWallet);
+        } else {
+            setIsRegisterModalOpen(true);
+            setIsLoading(false);
         }
-        
-        const totalPendingApps = (freelancerPendingCount || 0) + employerPendingCount;
-
-        const { count: disputesCount } = await supabase
-          .from('project_milestones')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'rejected')
-          .ilike('project_id', `%${addrLower}%`);
-
-        setMetrics({
-          active: totalActive,
-          approvals: approvalsCount || 0,
-          pending: totalPendingApps,
-          disputes: disputesCount || 0
-        });
-
-        // Fetch Active Projects Details
-        const activeProjectsList: ActiveProject[] = [];
-
-        // 1. Fetch Employer Jobs
-        const { data: employerJobs } = await supabase.from('jobs').select('*').ilike('employer_address', addrLower).eq('status', 'in-progress');
-        if (employerJobs) {
-          for (const job of employerJobs) {
-            const { data: freelancerApp } = await supabase.from('applications').select('freelancer_address').eq('job_id', job.id).eq('status', 'accepted').single();
-            const flAddress = freelancerApp ? freelancerApp.freelancer_address : 'Unknown';
-            const roomId = [addrLower, (flAddress as string).toLowerCase()].sort().join('_');
-            
-            const { data: milestones } = await supabase.from('project_milestones').select('status').eq('project_id', roomId);
-            const total = milestones && milestones.length > 0 ? milestones.length : 1;
-            const completed = milestones ? milestones.filter(m => m.status === 'approved').length : 0;
-            const progress = Math.round((completed / total) * 100);
-
-            activeProjectsList.push({ id: job.id, title: job.title, budget: job.budget, client: `Freelancer: ${formatAddress(flAddress as string)}`, status: 'Development', progress });
-          }
-        }
-
-        // 2. Fetch Freelancer Jobs
-        const { data: freelancerApps } = await supabase.from('applications').select('*, jobs(*)').ilike('freelancer_address', addrLower).eq('status', 'accepted');
-        if (freelancerApps) {
-          for (const app of freelancerApps) {
-            const job = app.jobs as any;
-            if (!job) continue;
-            const roomId = [addrLower, job.employer_address.toLowerCase()].sort().join('_');
-            
-            const { data: milestones } = await supabase.from('project_milestones').select('status').eq('project_id', roomId);
-            const total = milestones && milestones.length > 0 ? milestones.length : 1;
-            const completed = milestones ? milestones.filter(m => m.status === 'approved').length : 0;
-            const progress = Math.round((completed / total) * 100);
-
-            activeProjectsList.push({ id: job.id, title: job.title, budget: job.budget, client: `Client: ${formatAddress(job.employer_address)}`, status: 'In Progress', progress });
-          }
-        }
-
-        setActiveProjects(activeProjectsList);
-
-      } catch (err) {
-        console.error("Error fetching metrics:", err);
-      } finally {
-        setIsLoading(false);
-      }
     };
 
-    fetchMetrics();
-    // Setting up realtime subscription for updates could be added here later if needed
-  }, [walletAddress]);
+    const handleRegister = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!regName.trim() || !walletAddress) return;
+        setIsSaving(true);
 
-  return (
-    <div className="p-4 md:p-6 space-y-8">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-zinc-900 tracking-tight">
-            Welcome back{userName ? `, ${userName}` : (walletAddress ? `, ${formatAddress(walletAddress)}` : '')}! 👋
-          </h1>
-          <p className="text-zinc-500 font-medium">You've got 3 milestones to crush today. Let's do this!</p>
-        </div>
-        <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-zinc-200 shadow-sm w-full sm:w-auto">
-          <button className="flex-1 sm:flex-none px-4 py-2 bg-brand-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-brand-500/20">Freelancer</button>
-          <button className="flex-1 sm:flex-none px-4 py-2 text-zinc-500 font-bold text-sm hover:bg-zinc-50 rounded-xl">Client</button>
-        </div>
-      </div>
+        const lowerWallet = walletAddress.toLowerCase();
+        const newProfile = { wallet_address: lowerWallet, full_name: regName, role: regRole };
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-      {[
-        { label: 'Active Escrows', value: metrics.active.toString(), change: 'In Progress', icon: Briefcase, color: 'text-indigo-600', bg: 'bg-indigo-50', emoji: '🔒' },
-        { label: 'Pending Approvals', value: metrics.approvals.toString(), change: 'Action Req', icon: CheckCircle2, color: 'text-amber-600', bg: 'bg-amber-50', emoji: '⏳' },
-        { label: 'Pending Applications', value: metrics.pending.toString(), change: 'Marketplace', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', emoji: '📋' },
-        { label: 'Recent Disputes', value: metrics.disputes.toString(), change: 'All Good', icon: AlertTriangle, color: 'text-zinc-400', bg: 'bg-zinc-100', emoji: '⚖️' },
-      ].map((stat, i) => (
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.1 }}
-          key={stat.label} 
-          className="bg-white p-6 rounded-[2rem] border border-zinc-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group"
-        >
-          <div className="flex justify-between items-start mb-4">
-            <div className={cn("p-4 rounded-2xl transition-transform group-hover:scale-110", stat.bg)}>
-              <stat.icon className={stat.color} size={28} />
-            </div>
-            <div className="flex flex-col items-end">
-              <span className="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded-full mb-1">
-                {stat.change}
-              </span>
-              <span className="text-xl">{stat.emoji}</span>
-            </div>
-          </div>
-          <p className="text-zinc-500 text-sm font-bold uppercase tracking-wider">{stat.label}</p>
-          <h3 className="text-2xl md:text-3xl font-black text-zinc-900 mt-1">
-            {isLoading ? <Loader2 className="w-6 h-6 animate-spin text-zinc-400 mt-2" /> : stat.value}
-          </h3>
-        </motion.div>
-      ))}
-    </div>
+        const { error } = await supabase.from('users').insert([newProfile]);
 
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      <div className="bg-white rounded-[2rem] border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 md:p-8 border-b border-zinc-100 flex justify-between items-center">
-          <h3 className="text-xl font-bold text-zinc-900">Your Active Projects 📂</h3>
-          <button className="text-brand-600 text-sm font-bold hover:bg-brand-50 px-4 py-2 rounded-xl transition-all">View All</button>
-        </div>
-        <div className="divide-y divide-zinc-100">
-          {isLoading ? (
-            <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-brand-600" size={32} /></div>
-          ) : activeProjects.length === 0 ? (
-            <div className="p-10 text-center text-zinc-500 font-bold">No active projects found! Head to the Marketplace to start working.</div>
-          ) : (
-            activeProjects.map((project) => (
-              <div key={project.id} className="p-6 md:p-8 hover:bg-zinc-50 transition-all cursor-pointer group">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="text-lg font-bold text-zinc-900 group-hover:text-brand-600 transition-colors line-clamp-1 flex-1 pr-4">{project.title}</h4>
-                  <span className="text-sm border border-zinc-200 shadow-sm font-black text-zinc-900 bg-white px-3 py-1 rounded-full whitespace-nowrap">{project.budget}</span>
+        if (!error) {
+            setProfile(newProfile);
+            setIsRegisterModalOpen(false);
+            await fetchDashboardData(regRole, lowerWallet);
+        } else {
+            console.error(error);
+            alert("Failed to create profile.");
+        }
+        setIsSaving(false);
+    };
+
+    const fetchDashboardData = async (role: string, wallet: string) => {
+        if (role === 'freelancer') {
+            const [ongoing, pending, completed, projectsRes, meetingsRes] = await Promise.all([
+                supabase.from('applications').select('*', { count: 'exact' }).eq('freelancer_address', wallet).eq('status', 'accepted'),
+                supabase.from('applications').select('*', { count: 'exact' }).eq('freelancer_address', wallet).in('status', ['pending', 'interviewing']),
+                supabase.from('applications').select('*', { count: 'exact' }).eq('freelancer_address', wallet).eq('status', 'completed'),
+                supabase.from('applications').select('*, jobs(*)').eq('freelancer_address', wallet).eq('status', 'accepted').limit(5),
+                supabase.from('applications').select('*, jobs(title)').eq('freelancer_address', wallet).eq('status', 'interviewing')
+            ]);
+
+            setStats({ stat1: ongoing.count || 0, stat2: pending.count || 0, stat3: completed.count || 0 });
+            if (projectsRes.data) setActiveProjects(projectsRes.data);
+            if (meetingsRes.data) setUpcomingMeetings(meetingsRes.data.filter(m => m.meeting_date));
+
+        } else {
+            const jobsRes = await supabase.from('jobs').select('id').eq('employer_address', wallet);
+            const jobIds = jobsRes.data ? jobsRes.data.map(j => j.id) : [];
+
+            let appsToReviewCount = 0;
+            let fetchedMeetings: any[] = [];
+
+            if (jobIds.length > 0) {
+                const [appsRes, meetingsRes] = await Promise.all([
+                    supabase.from('applications').select('*', { count: 'exact' }).in('job_id', jobIds).eq('status', 'pending'),
+                    supabase.from('applications').select('*, jobs(title)').in('job_id', jobIds).eq('status', 'interviewing')
+                ]);
+                appsToReviewCount = appsRes.count || 0;
+                if (meetingsRes.data) fetchedMeetings = meetingsRes.data.filter(m => m.meeting_date);
+            }
+
+            const [posted, ongoing, projectsRes] = await Promise.all([
+                supabase.from('jobs').select('*', { count: 'exact' }).eq('employer_address', wallet),
+                supabase.from('jobs').select('*', { count: 'exact' }).eq('employer_address', wallet).eq('status', 'in-progress'),
+                supabase.from('jobs').select('*').eq('employer_address', wallet).eq('status', 'in-progress').limit(5)
+            ]);
+
+            setStats({ stat1: posted.count || 0, stat2: ongoing.count || 0, stat3: appsToReviewCount });
+            if (projectsRes.data) setActiveProjects(projectsRes.data);
+            setUpcomingMeetings(fetchedMeetings);
+        }
+        setIsLoading(false);
+    };
+
+    if (isLoading) {
+        return <div className="flex justify-center items-center h-[60vh]"><Loader2 className="animate-spin text-brand-600" size={40} /></div>;
+    }
+
+    return (
+        <div className="p-4 md:p-6 space-y-8 relative">
+
+            {/* ONBOARDING MODAL */}
+            {isRegisterModalOpen && (
+                <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl">
+                        <h3 className="text-2xl font-black text-zinc-900 mb-2">Welcome to HexaWork</h3>
+                        <p className="text-sm text-zinc-500 mb-6">Let's set up your profile before you continue.</p>
+
+                        <form onSubmit={handleRegister} className="space-y-6">
+                            <div>
+                                <label className="text-xs font-bold text-zinc-900 mb-2 block uppercase tracking-widest">Full Name</label>
+                                <input type="text" value={regName} onChange={e => setRegName(e.target.value)} placeholder="John Doe" className="w-full p-4 border border-zinc-200 bg-zinc-50 rounded-xl focus:border-brand-500 outline-none transition-all" required />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-zinc-900 mb-2 block uppercase tracking-widest">I want to...</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button type="button" onClick={() => setRegRole('freelancer')} className={`p-4 border-2 rounded-xl font-bold text-sm flex flex-col items-center gap-2 transition-all ${regRole === 'freelancer' ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-zinc-100 text-zinc-400 hover:bg-zinc-50'}`}>
+                                        <Briefcase size={24} /> Work
+                                    </button>
+                                    <button type="button" onClick={() => setRegRole('employer')} className={`p-4 border-2 rounded-xl font-bold text-sm flex flex-col items-center gap-2 transition-all ${regRole === 'employer' ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-zinc-100 text-zinc-400 hover:bg-zinc-50'}`}>
+                                        <User size={24} /> Hire
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button type="submit" disabled={isSaving} className="w-full py-4 bg-zinc-900 text-white rounded-xl font-black uppercase tracking-widest hover:bg-zinc-800 transition-all flex justify-center items-center">
+                                {isSaving ? <Loader2 className="animate-spin" /> : "Complete Setup"}
+                            </button>
+                        </form>
+                    </div>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-zinc-500 font-medium mb-5">
-                  <span className="flex items-center gap-1.5 bg-zinc-100 px-2 py-1 rounded-md"><User size={12} /> {project.client}</span>
-                  <span className="w-1.5 h-1.5 bg-zinc-300 rounded-full hidden sm:block"></span>
-                  <span className="flex items-center gap-1.5 font-bold tracking-wide uppercase text-[10px]"><Clock size={12} /> {project.status}</span>
-                </div>
-                <div className="relative">
-                  <div className="w-full bg-zinc-100 h-2.5 rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${project.progress}%` }}
-                      transition={{ duration: 1, ease: 'easeOut' }}
-                      className="bg-brand-500 h-full rounded-full shadow-[0_0_15px_rgba(139,92,246,0.3)]"
-                    />
-                  </div>
-                  <span className="absolute -top-6 right-0 text-[10px] font-black text-brand-600 uppercase tracking-widest">{project.progress}% Done</span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+            )}
 
-      <div className="bg-white rounded-[2rem] border border-zinc-200 shadow-sm p-6 md:p-8">
-        <h3 className="text-xl font-bold text-zinc-900 mb-8">Upcoming Milestones 🗓️</h3>
-        <div className="space-y-8">
-          {MILESTONES.map((m, i) => (
-            <div key={i} className="flex gap-4 md:gap-6 group cursor-pointer">
-              <div className={cn("flex-shrink-0 w-14 h-14 rounded-2xl flex flex-col items-center justify-center transition-transform group-hover:scale-110 shadow-sm", m.color)}>
-                <span className="text-[10px] uppercase font-black opacity-70">{m.date.split(' ')[0]}</span>
-                <span className="text-xl font-black leading-none">{m.date.split(' ')[1]}</span>
-              </div>
-              <div className="flex-1">
-                <h4 className="text-lg font-bold text-zinc-900 group-hover:text-brand-600 transition-colors">{m.title}</h4>
-                <p className="text-sm text-zinc-500 font-medium">{m.project} • {m.time}</p>
-              </div>
-              <ChevronRight className="text-zinc-300 group-hover:text-brand-500 transition-colors self-center" size={20} />
-            </div>
-          ))}
+            {profile && (
+                <>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div>
+                            <h1 className="text-2xl md:text-3xl font-extrabold text-zinc-900 tracking-tight">Welcome back, {profile.full_name}!</h1>
+                            <p className="text-zinc-500 font-medium">Here is what is happening with your account today.</p>
+                        </div>
+                        <div className="px-4 py-2 bg-zinc-100 text-zinc-600 rounded-xl font-bold text-sm uppercase tracking-widest border border-zinc-200">
+                            {profile.role === 'freelancer' ? 'Freelancer Mode' : 'Employer Mode'}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                        {profile.role === 'freelancer' ? (
+                            <>
+                                <StatCard label="Ongoing Jobs" value={stats.stat1} icon={Briefcase} color="text-brand-600" bg="bg-brand-50" onClick={() => navigate('/dashboard/summary/ongoing')} />
+                                <StatCard label="Pending Apps" value={stats.stat2} icon={Clock} color="text-indigo-600" bg="bg-indigo-50" onClick={() => navigate('/dashboard/summary/pending')} />
+                                <StatCard label="Completed Jobs" value={stats.stat3} icon={CheckCircle} color="text-emerald-600" bg="bg-emerald-50" onClick={() => navigate('/dashboard/summary/completed')} />
+                            </>
+                        ) : (
+                            <>
+                                <StatCard label="Jobs Posted" value={stats.stat1} icon={FileText} color="text-brand-600" bg="bg-brand-50" onClick={() => navigate('/jobmarket', { state: { tab: 'my-jobs' } })} />
+                                <StatCard label="Ongoing Jobs" value={stats.stat2} icon={Briefcase} color="text-indigo-600" bg="bg-indigo-50" onClick={() => navigate('/dashboard/summary/ongoing')} />
+                                <StatCard label="Apps to Review" value={stats.stat3} icon={User} color="text-amber-600" bg="bg-amber-50" onClick={() => navigate('/dashboard/summary/review')} />
+                            </>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="bg-white rounded-[2rem] border border-zinc-200 shadow-sm overflow-hidden flex flex-col">
+                            <div className="p-6 md:p-8 border-b border-zinc-100 flex justify-between items-center">
+                                <h3 className="text-xl font-bold text-zinc-900">Active Projects</h3>
+                            </div>
+                            <div className="divide-y divide-zinc-100 flex-1">
+                                {activeProjects.length === 0 ? (
+                                    <p className="p-8 text-center text-zinc-400 font-medium">No active projects right now.</p>
+                                ) : (
+                                    activeProjects.map((project, i) => (
+                                        <div key={i} onClick={() => navigate('/chat')} className="p-6 md:p-8 hover:bg-zinc-50 transition-all cursor-pointer group">
+                                            <div className="flex justify-between items-center mb-3">
+                                                <h4 className="text-lg font-bold text-zinc-900 group-hover:text-brand-600 transition-colors line-clamp-1">{profile.role === 'freelancer' ? project.jobs?.title : project.title}</h4>
+                                                <span className="text-xs font-black uppercase tracking-widest text-brand-600 bg-brand-50 px-3 py-1 rounded-lg">Active</span>
+                                            </div>
+                                            <div className="flex items-center gap-4 text-sm text-zinc-500 font-medium">
+                                                <span className="flex items-center gap-1.5"><CalendarIcon size={14} /> Created: {new Date(project.created_at).toLocaleDateString()}</span>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Calendar & Milestones Update */}
+                        <div className="bg-white rounded-[2rem] border border-zinc-200 shadow-sm p-6 md:p-8 flex flex-col">
+                            <h3 className="text-xl font-bold text-zinc-900 mb-6 flex items-center gap-2"><CalendarIcon className="text-brand-600" /> Scheduled Interviews</h3>
+
+                            {upcomingMeetings.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center text-center py-10 flex-1">
+                                    <Clock size={48} className="text-zinc-300 mb-4" />
+                                    <p className="text-zinc-500 max-w-sm">No upcoming interviews scheduled yet.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4 overflow-y-auto max-h-[300px] pr-2">
+                                    {upcomingMeetings.map((meeting, i) => (
+                                        <div key={i} className="p-4 rounded-2xl border border-zinc-100 bg-zinc-50 flex justify-between items-center group hover:border-blue-200 transition-all">
+                                            <div>
+                                                <h4 className="font-bold text-zinc-900 line-clamp-1">{meeting.jobs?.title}</h4>
+                                                <p className="text-sm font-medium text-blue-600 flex items-center gap-1 mt-1"><Clock size={14} /> {meeting.meeting_date}</p>
+                                            </div>
+                                            <a
+                                                href={meeting.meeting_link}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="p-3 bg-blue-100 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm flex-shrink-0 ml-4"
+                                                title="Join Video Call"
+                                            >
+                                                <Video size={20} />
+                                            </a>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Restored from HEAD */}
+                            <button onClick={() => navigate('/calendar')} className="w-full mt-8 py-4 bg-zinc-100 text-zinc-600 font-bold rounded-2xl hover:bg-zinc-200 transition-all flex items-center justify-center gap-2">
+                                <CalendarIcon size={18} />
+                                Open Full Calendar
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
-        <button onClick={() => navigate('/calendar')} className="w-full mt-8 py-4 bg-zinc-100 text-zinc-600 font-bold rounded-2xl hover:bg-zinc-200 transition-all flex items-center justify-center gap-2">
-          <CalendarIcon size={18} />
-          Open Full Calendar
-        </button>
-      </div>
-    </div>
-  </div>
-  );
+    );
 };
+
+const StatCard = ({ label, value, icon: Icon, color, bg, onClick }: any) => (
+    <motion.div
+        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        onClick={onClick}
+        className="bg-white p-6 rounded-[2rem] border border-zinc-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer"
+    >
+        <div className="flex justify-between items-start mb-4">
+            <div className={cn("p-4 rounded-2xl", bg)}>
+                <Icon className={color} size={28} />
+            </div>
+        </div>
+        <p className="text-zinc-500 text-sm font-bold uppercase tracking-wider">{label}</p>
+        <h3 className="text-3xl font-black text-zinc-900 mt-1">{value}</h3>
+    </motion.div>
+);

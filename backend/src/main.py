@@ -5,6 +5,8 @@ from agents import arbitrator_graph
 from tools import extract_code_from_zip
 from fastapi.middleware.cors import CORSMiddleware
 
+# python -m uvicorn main:app --reload --port 8000
+
 app = FastAPI(title="Freelance-Escrow AI Arbitrator")
 
 app.add_middleware(

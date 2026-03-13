@@ -4,11 +4,11 @@ import { supabase } from '../lib/supabase';
 import { useWallet } from '../lib/WalletContext';
 import { ethers } from 'ethers';
 
-import { ESCROW_ABI, ESCROW_BYTECODE,} from '../lib/escrowContract';
+import { ESCROW_ABI, ESCROW_BYTECODE } from '../lib/escrowContract';
 
 interface Message { id: string; content: string; sender_address: string; receiver_address: string; created_at: string; }
 interface Notification { id: string; content: string; wallet_address: string; room_id: string; created_at: string; }
-interface ChatHistory { walletAddress: string; lastMessage: string; time: string; timestamp: number; }
+interface ChatHistory { walletAddress: string; name: string; lastMessage: string; time: string; timestamp: number; }
 interface Milestone { id: string; project_id: string; title: string; status: 'pending' | 'submitted' | 'approved' | 'rejected'; due_date: string; amount?: string; duration_days?: string; notes?: string; file_url?: string; created_at: string; }
 interface ProjectFile { id: string; file_name: string; file_size: string; file_url?: string; }
 
@@ -44,7 +44,6 @@ export const ProjectChatView: React.FC = () => {
     const [isStaking, setIsStaking] = useState(false);
 
     const [isAddingChat, setIsAddingChat] = useState(false);
-    const [newWalletInput, setNewWalletInput] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [filePreview, setFilePreview] = useState<string | null>(null);
 
@@ -310,16 +309,41 @@ export const ProjectChatView: React.FC = () => {
         } catch (error) { console.error(error); } finally { setIsUploading(false); }
     };
 
+    // UPDATED: Fetch user profiles along with the chat history
     useEffect(() => {
         if (!walletAddress) return;
         const fetchHistory = async () => {
             const { data } = await supabase.from('messages').select('*').or(`sender_address.eq.${walletAddress},receiver_address.eq.${walletAddress}`).order('created_at', { ascending: false });
             if (data) {
-                const historyMap = new Map<string, ChatHistory>()
+                const historyMap = new Map<string, ChatHistory>();
+
                 data.forEach((msg: Message) => {
                     const other = msg.sender_address === walletAddress ? msg.receiver_address : msg.sender_address;
-                    if (!historyMap.has(other)) historyMap.set(other, { walletAddress: other, lastMessage: msg.content.startsWith('[System]') ? "System Event Logged" : msg.content, time: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(msg.created_at).getTime() });
+                    if (!historyMap.has(other)) {
+                        historyMap.set(other, {
+                            walletAddress: other,
+                            name: formatAddress(other),
+                            lastMessage: msg.content.startsWith('[System]') ? "System Event Logged" : msg.content,
+                            time: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            timestamp: new Date(msg.created_at).getTime()
+                        });
+                    }
                 });
+
+                const uniqueWallets = Array.from(historyMap.keys());
+
+                if (uniqueWallets.length > 0) {
+                    const { data: usersData } = await supabase.from('users').select('wallet_address, full_name').in('wallet_address', uniqueWallets);
+                    if (usersData) {
+                        usersData.forEach(user => {
+                            const chat = historyMap.get(user.wallet_address);
+                            if (chat) {
+                                chat.name = user.full_name || formatAddress(user.wallet_address);
+                            }
+                        });
+                    }
+                }
+
                 const arr = Array.from(historyMap.values()).sort((a, b) => b.timestamp - a.timestamp);
                 setChatHistory(arr);
                 if (arr.length > 0 && !activeChatWallet) setActiveChatWallet(arr[0].walletAddress);
@@ -392,6 +416,9 @@ export const ProjectChatView: React.FC = () => {
 
     const progress = milestones.length > 0 ? Math.round((milestones.filter(m => m.status === 'approved').length / milestones.length) * 100) : 0;
 
+    const activeChatDetails = chatHistory.find(c => c.walletAddress === activeChatWallet);
+    const activeChatName = activeChatDetails?.name || formatAddress(activeChatWallet) || 'Select a chat';
+
     return (
         <div className="flex h-[calc(100vh-80px)] bg-white overflow-hidden border-t border-zinc-100 relative">
             {isFundModalOpen && (
@@ -462,7 +489,7 @@ export const ProjectChatView: React.FC = () => {
                         <button key={chat.walletAddress} onClick={() => setActiveChatWallet(chat.walletAddress)} className={`w-full p-4 text-left border-b flex items-center gap-3 ${activeChatWallet === chat.walletAddress ? 'bg-white border-l-4 border-l-brand-500 shadow-sm' : 'hover:bg-zinc-100/50'}`}>
                             <UserCircle className="text-zinc-400 flex-shrink-0" size={24} />
                             <div className="min-w-0 flex-1">
-                                <p className="text-xs font-mono font-bold text-zinc-900 truncate">{formatAddress(chat.walletAddress)}</p>
+                                <p className="text-xs font-black text-zinc-900 truncate">{chat.name}</p>
                                 <p className="text-[10px] text-zinc-400 truncate mt-1">{chat.lastMessage}</p>
                             </div>
                         </button>
@@ -471,8 +498,8 @@ export const ProjectChatView: React.FC = () => {
             </div>
 
             <div className="flex-1 flex flex-col bg-white min-w-0 relative">
-                <div className="p-4 border-b font-mono font-bold flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-10">
-                    <span className="text-zinc-900">{formatAddress(activeChatWallet) || 'Select a chat'}</span>
+                <div className="p-4 border-b font-black flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-10">
+                    <span className="text-zinc-900">{activeChatName}</span>
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-zinc-50/20">
                     {messages.filter(msg => !msg.content.startsWith('[System]')).map(msg => (

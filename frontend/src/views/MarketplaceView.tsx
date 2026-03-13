@@ -7,7 +7,7 @@ import { useWallet } from '../lib/WalletContext';
 import { ethers } from 'ethers';
 import { ESCROW_ABI, ESCROW_BYTECODE } from '../lib/escrowContract';
 
-interface Job { id: string; employer_address: string; title: string; description: string; budget: string; tags: string[]; status: string; created_at: string; milestones_json?: any[]; contract_address?: string; }
+interface Job { id: string; employer_address: string; title: string; description: string; budget: string; tags: string[]; status: string; created_at: string; milestones_json?: any[]; contract_address?: string; experience_level?: string; project_type?: string; deadline?: string; }
 interface Application { id: string; job_id: string; freelancer_address: string; cover_letter: string; resume_url?: string; status: string; created_at: string; meeting_date?: string; meeting_link?: string; jobs?: Job; }
 
 export const MarketplaceView: React.FC = () => {
@@ -24,6 +24,7 @@ export const MarketplaceView: React.FC = () => {
 
     const [isPostModalOpen, setIsPostModalOpen] = useState(false);
     const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
+    const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [isInterviewModalOpen, setIsInterviewModalOpen] = useState(false);
 
@@ -33,7 +34,7 @@ export const MarketplaceView: React.FC = () => {
     const [selectedJob, setSelectedJob] = useState<Job | null>(null);
     const [jobApplicants, setJobApplicants] = useState<Application[]>([]);
 
-    const [newJob, setNewJob] = useState({ title: '', description: '', tags: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
+    const [newJob, setNewJob] = useState({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
     const [coverLetter, setCoverLetter] = useState('');
     const [resumeFile, setResumeFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -83,13 +84,15 @@ export const MarketplaceView: React.FC = () => {
 
             const { error } = await supabase.from('jobs').insert([{
                 employer_address: walletAddress.toLowerCase(), title: newJob.title, description: newJob.description,
-                budget: `${totalBudget} PAS`, tags: tagsArray, milestones_json: newJob.milestones
+                budget: `${totalBudget} PAS`, tags: tagsArray, milestones_json: newJob.milestones,
+                experience_level: newJob.experience_level, project_type: newJob.project_type,
+                deadline: newJob.deadline || null,
             }]);
 
             if (error) throw new Error("DB Error (Post Job): " + error.message);
 
             setIsPostModalOpen(false);
-            setNewJob({ title: '', description: '', tags: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
+            setNewJob({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
             fetchData();
         } catch (err: any) {
             console.error(err);
@@ -322,32 +325,42 @@ export const MarketplaceView: React.FC = () => {
                         <div className="col-span-full text-center py-10 text-zinc-500 font-medium border-2 border-dashed border-zinc-200 rounded-3xl">No jobs found.</div>
                     ) : (
                         displayJobs.map((job, i) => (
-                            <motion.div key={job.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }} className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-zinc-100 shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 cursor-pointer group relative overflow-hidden flex flex-col">
+                            <motion.div
+                                key={job.id}
+                                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }}
+                                onClick={() => {
+                                    if (activeTab === 'my-jobs') { openReviewModal(job); }
+                                    else { setSelectedJob(job); setIsDetailModalOpen(true); }
+                                }}
+                                className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-zinc-100 shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 cursor-pointer group relative overflow-hidden flex flex-col"
+                            >
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-brand-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
                                 <div className="flex justify-between items-start mb-6 relative z-10">
                                     <div className="w-14 h-14 bg-zinc-50 rounded-2xl flex items-center justify-center group-hover:bg-brand-100 transition-colors"><Briefcase className="text-zinc-400 group-hover:text-brand-600" size={28} /></div>
-                                    <span className="text-[10px] font-black text-brand-600 bg-brand-50 px-3 py-1.5 rounded-full uppercase tracking-widest">{job.status}</span>
+                                    <div className="flex flex-col items-end gap-1">
+                                        <span className="text-[10px] font-black text-brand-600 bg-brand-50 px-3 py-1.5 rounded-full uppercase tracking-widest">{job.status}</span>
+                                        {job.experience_level && <span className="text-[10px] font-bold text-zinc-400 bg-zinc-50 px-2 py-1 rounded-full">{job.experience_level}</span>}
+                                    </div>
                                 </div>
                                 <h3 className="font-black text-zinc-900 text-xl group-hover:text-brand-600 transition-colors mb-3 leading-tight">{job.title}</h3>
-                                <p className="text-zinc-500 text-sm font-medium line-clamp-2 mb-6 flex-1">{job.description}</p>
-                                <div className="flex flex-wrap gap-2 mb-8 relative z-10">
+                                <p className="text-zinc-500 text-sm font-medium line-clamp-2 mb-4 flex-1">{job.description}</p>
+                                {job.project_type && <p className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg w-fit mb-4">{job.project_type}</p>}
+                                <div className="flex flex-wrap gap-2 mb-6 relative z-10">
                                     {job.tags.map(tag => (<span key={tag} className="text-[10px] font-black uppercase tracking-wider text-zinc-500 bg-zinc-50 px-3 py-1 rounded-lg">{tag}</span>))}
                                 </div>
-                                <div className="pt-6 border-t border-zinc-50 flex justify-between items-center relative z-10">
-                                    <div><p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">Budget</p><p className="text-zinc-900 font-black text-lg">{job.budget}</p></div>
-
+                                <div className="pt-5 border-t border-zinc-50 flex justify-between items-center relative z-10">
+                                    <div>
+                                        <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">Budget</p>
+                                        <p className="text-zinc-900 font-black text-lg">{job.budget}</p>
+                                    </div>
                                     {activeTab === 'browse' ? (
-                                        job.employer_address.toLowerCase() === walletAddress?.toLowerCase() ? (
-                                            <button disabled className="bg-zinc-100 text-zinc-400 px-4 py-2 rounded-xl font-black text-xs cursor-not-allowed border border-zinc-200">Your Post</button>
-                                        ) : userRole === 'employer' ? null : myApplications.some(app => app.job_id === job.id) ? (
-                                            <button disabled className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl font-black text-xs cursor-not-allowed flex items-center gap-1 border border-emerald-100">
-                                                <CheckCircle2 size={14}/> Applied
-                                            </button>
+                                        myApplications.some(app => app.job_id === job.id) ? (
+                                            <span className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1 border border-emerald-100"><CheckCircle2 size={14}/> Applied</span>
                                         ) : (
-                                            <button onClick={() => { setSelectedJob(job); setIsApplyModalOpen(true); }} className="bg-brand-50 text-brand-600 px-4 py-2 rounded-xl font-black text-xs hover:bg-brand-600 hover:text-white transition-all">Apply Now</button>
+                                            <span className="bg-brand-50 text-brand-600 px-3 py-1.5 rounded-xl font-black text-xs">View Details →</span>
                                         )
                                     ) : (
-                                        <button onClick={() => openReviewModal(job)} className="bg-zinc-900 text-white px-4 py-2 rounded-xl font-black text-xs hover:bg-zinc-800 transition-all">View Applicants</button>
+                                        <span className="bg-zinc-900 text-white px-3 py-1.5 rounded-xl font-black text-xs">View Applicants</span>
                                     )}
                                 </div>
                             </motion.div>
@@ -378,18 +391,121 @@ export const MarketplaceView: React.FC = () => {
                 </div>
             )}
 
+            {isDetailModalOpen && selectedJob && (
+                <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsDetailModalOpen(false)}>
+                    <div className="bg-white rounded-[2rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="p-8 pb-0">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="w-14 h-14 bg-brand-50 rounded-2xl flex items-center justify-center">
+                                    <Briefcase className="text-brand-600" size={28} />
+                                </div>
+                                <button onClick={() => setIsDetailModalOpen(false)} className="p-2 hover:bg-zinc-100 rounded-xl transition-all"><X size={20} /></button>
+                            </div>
+                            <h2 className="text-2xl font-black text-zinc-900 mb-2">{selectedJob.title}</h2>
+                            <div className="flex flex-wrap gap-2 mb-6">
+                                {selectedJob.experience_level && <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">{selectedJob.experience_level} Level</span>}
+                                {selectedJob.project_type && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">{selectedJob.project_type}</span>}
+                                <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-3 py-1 rounded-full">🌐 Remote</span>
+                                {selectedJob.deadline && <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">📅 Due {new Date(selectedJob.deadline).toLocaleDateString()}</span>}
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        <div className="px-8 pb-8 space-y-6">
+                            <div>
+                                <h4 className="text-xs font-black uppercase tracking-widest text-zinc-400 mb-2">Description</h4>
+                                <p className="text-zinc-700 text-sm leading-relaxed whitespace-pre-wrap">{selectedJob.description}</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-zinc-50 p-4 rounded-2xl">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">Total Budget</p>
+                                    <p className="text-xl font-black text-zinc-900">{selectedJob.budget}</p>
+                                </div>
+                                <div className="bg-zinc-50 p-4 rounded-2xl">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">Milestones</p>
+                                    <p className="text-xl font-black text-zinc-900">{selectedJob.milestones_json?.length ?? 0}</p>
+                                </div>
+                            </div>
+
+                            {selectedJob.milestones_json && selectedJob.milestones_json.length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-black uppercase tracking-widest text-zinc-400 mb-3">Payment Milestones</h4>
+                                    <div className="space-y-2">
+                                        {selectedJob.milestones_json.map((ms: any, i: number) => (
+                                            <div key={i} className="flex justify-between items-center bg-zinc-50 p-4 rounded-xl border border-zinc-100">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-black flex items-center justify-center">{i + 1}</span>
+                                                    <span className="text-sm font-bold text-zinc-800">{ms.title}</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-sm font-black text-zinc-900">{ms.amount} PAS</p>
+                                                    <p className="text-[10px] text-zinc-400">{ms.duration_days} days</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-2">
+                                {selectedJob.tags.map(tag => (<span key={tag} className="text-[10px] font-black uppercase tracking-wider text-zinc-500 bg-zinc-100 px-3 py-1.5 rounded-lg">{tag}</span>))}
+                            </div>
+
+                            {/* CTA */}
+                            {myApplications.some(app => app.job_id === selectedJob.id) ? (
+                                <div className="flex items-center gap-2 justify-center py-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                                    <CheckCircle2 className="text-emerald-600" size={20} />
+                                    <span className="font-black text-emerald-700">You have already applied to this job</span>
+                                </div>
+                            ) : userRole === 'freelancer' ? (
+                                <button
+                                    onClick={() => { setIsDetailModalOpen(false); setIsApplyModalOpen(true); }}
+                                    className="w-full py-4 bg-brand-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-brand-700 transition-all shadow-xl shadow-brand-600/20"
+                                >
+                                    Apply Now →
+                                </button>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {isPostModalOpen && (
                 <div className="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-[2rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 shadow-2xl">
                         <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-black">Post a New Job</h3><button onClick={() => setIsPostModalOpen(false)}><X size={20} /></button></div>
                         <form onSubmit={handlePostJob} className="space-y-4">
                             <input type="text" value={newJob.title} onChange={e => setNewJob({...newJob, title: e.target.value})} placeholder="Job Title" className="w-full p-4 border rounded-xl" required />
-                            <textarea value={newJob.description} onChange={e => setNewJob({...newJob, description: e.target.value})} placeholder="Detailed Description..." className="w-full h-32 p-4 border rounded-xl resize-none" required />
-                            <input type="text" value={newJob.tags} onChange={e => setNewJob({...newJob, tags: e.target.value})} placeholder="Tags (comma separated)" className="w-full p-4 border rounded-xl" required />
+                            <textarea value={newJob.description} onChange={e => setNewJob({...newJob, description: e.target.value})} placeholder="Detailed Description — explain scope, deliverables, and expectations..." className="w-full h-36 p-4 border rounded-xl resize-none" required />
+                            <input type="text" value={newJob.tags} onChange={e => setNewJob({...newJob, tags: e.target.value})} placeholder="Skills / Tags (comma separated, e.g. React, Solidity)" className="w-full p-4 border rounded-xl" required />
 
-                            <div className="border-t border-zinc-100 pt-6 mt-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-1 block">Experience Level</label>
+                                    <select value={newJob.experience_level} onChange={e => setNewJob({...newJob, experience_level: e.target.value})} className="w-full p-4 border rounded-xl bg-white font-bold text-sm">
+                                        <option>Junior</option>
+                                        <option>Mid</option>
+                                        <option>Senior</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-1 block">Project Type</label>
+                                    <select value={newJob.project_type} onChange={e => setNewJob({...newJob, project_type: e.target.value})} className="w-full p-4 border rounded-xl bg-white font-bold text-sm">
+                                        <option>One-time</option>
+                                        <option>Ongoing</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-1 block">Deadline (optional)</label>
+                                    <input type="date" value={newJob.deadline} onChange={e => setNewJob({...newJob, deadline: e.target.value})} className="w-full p-4 border rounded-xl bg-white font-bold text-sm" />
+                                </div>
+                            </div>
+
+                            <div className="border-t border-zinc-100 pt-6 mt-2">
                                 <div className="flex justify-between items-center mb-4">
-                                    <div><h4 className="font-black text-sm text-zinc-900">Project Milestones</h4><p className="text-[10px] text-zinc-500">Break your project down into paid deliverables.</p></div>
+                                    <div><h4 className="font-black text-sm text-zinc-900">Payment Milestones</h4><p className="text-[10px] text-zinc-500">Break your project into paid deliverables.</p></div>
                                     <button type="button" onClick={() => setNewJob({...newJob, milestones: [...newJob.milestones, {title: '', amount: '', duration_days: '7'}]})} className="text-xs font-bold text-brand-600 flex items-center gap-1 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg"><Plus size={14} /> Add Milestone</button>
                                 </div>
                                 <div className="space-y-3">
@@ -397,7 +513,7 @@ export const MarketplaceView: React.FC = () => {
                                         <div key={index} className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-100">
                                             <span className="text-xs font-black text-zinc-400 pl-2">{index + 1}.</span>
                                             <input type="text" value={ms.title} onChange={e => { const u = [...newJob.milestones]; u[index].title = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
-                                            <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...newJob.milestones]; u[index].amount = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="PAS Amount" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
+                                            <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...newJob.milestones]; u[index].amount = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
                                             <input type="number" value={ms.duration_days} onChange={e => { const u = [...newJob.milestones]; u[index].duration_days = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
                                             {index > 0 && <button type="button" onClick={() => { const u = [...newJob.milestones]; u.splice(index, 1); setNewJob({...newJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>}
                                         </div>

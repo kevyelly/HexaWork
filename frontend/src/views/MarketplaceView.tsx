@@ -34,7 +34,7 @@ export const MarketplaceView: React.FC = () => {
     const [selectedJob, setSelectedJob] = useState<Job | null>(null);
     const [jobApplicants, setJobApplicants] = useState<Application[]>([]);
 
-    const [newJob, setNewJob] = useState({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
+    const [newJob, setNewJob] = useState({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', requirement: '', amount: '', duration_days: '7' }] });
     const [coverLetter, setCoverLetter] = useState('');
     const [resumeFile, setResumeFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -99,7 +99,7 @@ export const MarketplaceView: React.FC = () => {
             if (error) throw new Error("DB Error (Post Job): " + error.message);
 
             setIsPostModalOpen(false);
-            setNewJob({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
+            setNewJob({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', requirement: '', amount: '', duration_days: '7' }] });
             fetchData();
         } catch (err: any) {
             console.error(err);
@@ -305,7 +305,8 @@ export const MarketplaceView: React.FC = () => {
                 const msToInsert = app.jobs.milestones_json.map((m: any) => {
                     const days = parseInt(m.duration_days) || 7;
                     const dueDate = new Date(Date.now() + days * 86400000).toISOString();
-                    return { project_id: roomId, title: m.title, amount: m.amount, duration_days: m.duration_days, status: 'pending', due_date: dueDate };
+                    const titleWithReq = m.requirement ? `${m.title} - Req: ${m.requirement}` : m.title;
+                    return { project_id: roomId, title: titleWithReq, amount: m.amount, duration_days: m.duration_days, status: 'pending', due_date: dueDate };
                 });
                 await supabase.from('project_milestones').insert(msToInsert);
             }
@@ -558,15 +559,22 @@ export const MarketplaceView: React.FC = () => {
                                     <h4 className="text-xs font-black uppercase tracking-widest text-zinc-400 mb-3">Payment Milestones</h4>
                                     <div className="space-y-2">
                                         {selectedJob.milestones_json.map((ms: any, i: number) => (
-                                            <div key={i} className="flex justify-between items-center bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                                                <div className="flex items-center gap-3">
-                                                    <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-black flex items-center justify-center">{i + 1}</span>
-                                                    <span className="text-sm font-bold text-zinc-800">{ms.title}</span>
+                                            <div key={i} className="flex flex-col gap-2 bg-zinc-50 p-4 rounded-xl border border-zinc-100">
+                                                <div className="flex justify-between items-start w-full">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-black flex items-center justify-center shrink-0">{i + 1}</span>
+                                                        <span className="text-sm font-bold text-zinc-800 break-words">{ms.title}</span>
+                                                    </div>
+                                                    <div className="text-right shrink-0 ml-4">
+                                                        <p className="text-sm font-black text-zinc-900">{ms.amount} PAS</p>
+                                                        <p className="text-[10px] text-zinc-400">{ms.duration_days} days</p>
+                                                    </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <p className="text-sm font-black text-zinc-900">{ms.amount} PAS</p>
-                                                    <p className="text-[10px] text-zinc-400">{ms.duration_days} days</p>
-                                                </div>
+                                                {ms.requirement && (
+                                                    <div className="pl-9 pr-2">
+                                                        <p className="text-xs text-zinc-500 font-medium bg-white p-2 rounded-lg border border-zinc-100 break-words"><span className="font-bold text-zinc-700">Requirement:</span> {ms.requirement}</p>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -655,16 +663,21 @@ export const MarketplaceView: React.FC = () => {
                             <div className="border-t border-zinc-100 pt-6 mt-2">
                                 <div className="flex justify-between items-center mb-4">
                                     <div><h4 className="font-black text-sm text-zinc-900">Payment Milestones</h4><p className="text-[10px] text-zinc-500">Break your project into paid deliverables.</p></div>
-                                    <button type="button" onClick={() => setNewJob({...newJob, milestones: [...newJob.milestones, {title: '', amount: '', duration_days: '7'}]})} className="text-xs font-bold text-brand-600 flex items-center gap-1 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg"><Plus size={14} /> Add Milestone</button>
+                                    <button type="button" onClick={() => setNewJob({...newJob, milestones: [...newJob.milestones, {title: '', requirement: '', amount: '', duration_days: '7'}]})} className="text-xs font-bold text-brand-600 flex items-center gap-1 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg"><Plus size={14} /> Add Milestone</button>
                                 </div>
                                 <div className="space-y-3">
                                     {newJob.milestones.map((ms, index) => (
-                                        <div key={index} className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-100">
-                                            <span className="text-xs font-black text-zinc-400 pl-2">{index + 1}.</span>
-                                            <input type="text" value={ms.title} onChange={e => { const u = [...newJob.milestones]; u[index].title = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
-                                            <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...newJob.milestones]; u[index].amount = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
-                                            <input type="number" value={ms.duration_days} onChange={e => { const u = [...newJob.milestones]; u[index].duration_days = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
-                                            {index > 0 && <button type="button" onClick={() => { const u = [...newJob.milestones]; u.splice(index, 1); setNewJob({...newJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>}
+                                        <div key={index} className="flex flex-col gap-2 bg-zinc-50 p-3 rounded-xl border border-zinc-100">
+                                            <div className="flex gap-2 items-center">
+                                                <span className="text-xs font-black text-zinc-400 pl-1 w-4">{index + 1}.</span>
+                                                <input type="text" value={ms.title} onChange={e => { const u = [...newJob.milestones]; u[index].title = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
+                                                <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...newJob.milestones]; u[index].amount = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
+                                                <input type="number" value={ms.duration_days} onChange={e => { const u = [...newJob.milestones]; u[index].duration_days = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
+                                                {index > 0 && <button type="button" onClick={() => { const u = [...newJob.milestones]; u.splice(index, 1); setNewJob({...newJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg shrink-0"><Trash2 size={16} /></button>}
+                                            </div>
+                                            <div className="pl-7 pr-1">
+                                                <input type="text" value={ms.requirement || ''} onChange={e => { const u = [...newJob.milestones]; u[index].requirement = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Requirement (e.g. Figma link, specific feature)" className="w-full p-3 border rounded-lg text-sm bg-white" required />
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

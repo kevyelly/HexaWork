@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Plus, Briefcase, ChevronRight, CheckCircle2, X, Loader2, UserCircle, MessageSquare, FileText, UploadCloud, Trash2, Calendar, Video } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Plus, Briefcase, CheckCircle2, X, Loader2, UserCircle, MessageSquare, FileText, UploadCloud, Trash2, Calendar, Video } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useWallet } from '../lib/WalletContext';
 
@@ -9,7 +10,14 @@ interface Application { id: string; job_id: string; freelancer_address: string; 
 
 export const MarketplaceView: React.FC = () => {
     const { walletAddress } = useWallet();
-    const [activeTab, setActiveTab] = useState<'browse' | 'my-jobs' | 'my-apps'>('browse');
+    const location = useLocation();
+
+    // Role & Tab State
+    const [userRole, setUserRole] = useState<'freelancer' | 'employer' | null>(null);
+    const [activeTab, setActiveTab] = useState<'browse' | 'my-jobs' | 'my-apps'>(
+        (location.state as any)?.tab || 'browse'
+    );
+
     const [jobs, setJobs] = useState<Job[]>([]);
     const [myApplications, setMyApplications] = useState<Application[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -31,13 +39,36 @@ export const MarketplaceView: React.FC = () => {
     const [resumeFile, setResumeFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
 
+    useEffect(() => {
+        if ((location.state as any)?.tab) {
+            setActiveTab((location.state as any).tab);
+        }
+
+        if ((location.state as any)?.autoOpenReview && jobs.length > 0) {
+            const jobIdToOpen = (location.state as any).autoOpenReview;
+            const jobToReview = jobs.find(j => j.id === jobIdToOpen);
+
+            if (jobToReview) {
+                openReviewModal(jobToReview);
+                window.history.replaceState({}, document.title);
+            }
+        }
+    }, [location.state, jobs]);
+
     const fetchData = async () => {
         setIsLoading(true);
         const { data: jobsData } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
         if (jobsData) setJobs(jobsData);
 
         if (walletAddress) {
-            const { data: appsData } = await supabase.from('applications').select('*, jobs(*)').eq('freelancer_address', walletAddress);
+            const lowerWallet = walletAddress.toLowerCase();
+
+            // 1. Fetch the user's role
+            const { data: userData } = await supabase.from('users').select('role').eq('wallet_address', lowerWallet).single();
+            if (userData) setUserRole(userData.role);
+
+            // 2. Fetch applications
+            const { data: appsData } = await supabase.from('applications').select('*, jobs(*)').eq('freelancer_address', lowerWallet);
             if (appsData) setMyApplications(appsData);
         }
         setIsLoading(false);
@@ -52,7 +83,16 @@ export const MarketplaceView: React.FC = () => {
         try {
             const tagsArray = newJob.tags.split(',').map(t => t.trim()).filter(t => t);
             const totalBudget = newJob.milestones.reduce((sum, ms) => sum + Number(ms.amount || 0), 0);
-            await supabase.from('jobs').insert([{ employer_address: walletAddress, title: newJob.title, description: newJob.description, budget: `${totalBudget} PAS`, tags: tagsArray, milestones_json: newJob.milestones }]);
+
+            await supabase.from('jobs').insert([{
+                employer_address: walletAddress.toLowerCase(),
+                title: newJob.title,
+                description: newJob.description,
+                budget: `${totalBudget} PAS`,
+                tags: tagsArray,
+                milestones_json: newJob.milestones
+            }]);
+
             setIsPostModalOpen(false);
             setNewJob({ title: '', description: '', tags: '', milestones: [{ title: '', amount: '', duration_days: '7' }] });
             fetchData();
@@ -72,7 +112,21 @@ export const MarketplaceView: React.FC = () => {
                 const { data } = supabase.storage.from('project-files').getPublicUrl(filePath);
                 resumeUrl = data.publicUrl;
             }
-            await supabase.from('applications').insert([{ job_id: selectedJob.id, freelancer_address: walletAddress, cover_letter: coverLetter, resume_url: resumeUrl, status: 'pending' }]);
+
+            await supabase.from('applications').insert([{
+                job_id: selectedJob.id,
+                freelancer_address: walletAddress.toLowerCase(),
+                cover_letter: coverLetter,
+                resume_url: resumeUrl,
+                status: 'pending'
+            }]);
+
+            await supabase.from('notifications').insert([{
+                room_id: `job_${selectedJob.id}`,
+                wallet_address: selectedJob.employer_address.toLowerCase(),
+                content: `New Application: A freelancer just applied to your job "${selectedJob.title}". Head to your dashboard to review their proposal!`
+            }]);
+
             setIsApplyModalOpen(false); setCoverLetter(''); setResumeFile(null);
             fetchData(); alert("Application submitted!");
         } catch (err: any) { alert(err.message || "Failed to submit application."); } finally { setIsProcessing(false); }
@@ -128,20 +182,19 @@ export const MarketplaceView: React.FC = () => {
 
             await supabase.from('messages').insert([{
                 content: `[System] Contract Finalized!`,
-                sender_address: walletAddress, receiver_address: freelancerAddr
+                sender_address: walletAddress!.toLowerCase(), receiver_address: freelancerAddr.toLowerCase()
             }]);
 
-            // NEW: Dismissible UI Notifications for both parties
             await supabase.from('notifications').insert([
-                { room_id: roomId, wallet_address: walletAddress, content: `Contract Finalized! Please click 'Fund Contract' to lock the milestone funds.` },
-                { room_id: roomId, wallet_address: freelancerAddr, content: `Contract Finalized! Welcome to the workspace. Waiting for the employer to fund the Escrow.` }
+                { room_id: roomId, wallet_address: walletAddress!.toLowerCase(), content: `Contract Finalized! Please click 'Fund Contract' to lock the milestone funds.` },
+                { room_id: roomId, wallet_address: freelancerAddr.toLowerCase(), content: `Contract Finalized! Welcome to the workspace. Waiting for the employer to fund the Escrow.` }
             ]);
 
             window.location.href = '/chat';
         } catch (err) { console.error(err); } finally { setIsProcessing(false); }
     };
 
-    const displayJobs = activeTab === 'browse' ? jobs.filter(j => j.status === 'open') : jobs.filter(j => j.employer_address === walletAddress);
+    const displayJobs = activeTab === 'browse' ? jobs.filter(j => j.status === 'open') : jobs.filter(j => j.employer_address.toLowerCase() === walletAddress?.toLowerCase());
 
     return (
         <div className="p-4 md:p-6 space-y-8 relative">
@@ -152,11 +205,20 @@ export const MarketplaceView: React.FC = () => {
                 </div>
                 <div className="flex gap-3 w-full md:w-auto">
                     <div className="flex bg-zinc-100 p-1 rounded-2xl">
-                        <button onClick={() => setActiveTab('browse')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'browse' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}>Browse</button>
-                        <button onClick={() => setActiveTab('my-jobs')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-jobs' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}>My Posted Jobs</button>
-                        <button onClick={() => setActiveTab('my-apps')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-apps' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}>My Applications</button>
+                        {userRole === 'freelancer' && (
+                            <button onClick={() => setActiveTab('browse')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'browse' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}>Browse</button>
+                        )}
+
+                        {userRole === 'employer' && (
+                            <button onClick={() => setActiveTab('my-jobs')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-jobs' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}>My Posted Jobs</button>
+                        )}
+
+                        {userRole === 'freelancer' && (
+                            <button onClick={() => setActiveTab('my-apps')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-apps' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}>My Applications</button>
+                        )}
                     </div>
-                    {activeTab === 'my-jobs' && (
+
+                    {userRole === 'employer' && (
                         <button onClick={() => setIsPostModalOpen(true)} className="bg-brand-600 text-white px-6 py-2.5 rounded-2xl font-black shadow-xl shadow-brand-600/20 hover:bg-brand-700 transition-all flex items-center gap-2">
                             <Plus size={18} /> Post Job
                         </button>
@@ -166,65 +228,80 @@ export const MarketplaceView: React.FC = () => {
 
             {isLoading ? (
                 <div className="flex justify-center py-20"><Loader2 className="animate-spin text-brand-600" size={40} /></div>
-            ) : activeTab === 'my-apps' ? (
+            ) : activeTab === 'my-apps' && userRole === 'freelancer' ? (
                 <div className="space-y-4">
-                    {myApplications.map(app => (
-                        <div key={app.id} className="bg-white p-6 rounded-[2rem] border border-zinc-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div>
-                                <h3 className="font-black text-lg">{app.jobs?.title}</h3>
-                                <p className="text-sm text-zinc-500">Applied on: {new Date(app.created_at).toLocaleDateString()}</p>
+                    {myApplications.length === 0 ? (
+                        <div className="text-center py-10 text-zinc-500 font-medium border-2 border-dashed border-zinc-200 rounded-3xl">You haven't applied to any jobs yet.</div>
+                    ) : (
+                        myApplications.map(app => (
+                            <div key={app.id} className="bg-white p-6 rounded-[2rem] border border-zinc-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div>
+                                    <h3 className="font-black text-lg">{app.jobs?.title}</h3>
+                                    <p className="text-sm text-zinc-500">Applied on: {new Date(app.created_at).toLocaleDateString()}</p>
+                                </div>
+                                <div className="flex flex-col items-end gap-2">
+                                    <span className={`px-4 py-2 rounded-xl text-xs font-black uppercase ${app.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' : app.status === 'interviewing' ? 'bg-blue-100 text-blue-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                                        {app.status}
+                                    </span>
+                                    {app.status === 'interviewing' && app.meeting_date && (
+                                        <div className="flex flex-col items-end">
+                                            <p className="text-[10px] font-bold text-zinc-500 mb-1 flex items-center gap-1"><Calendar size={12}/> {app.meeting_date}</p>
+                                            <a href={app.meeting_link} target="_blank" rel="noopener noreferrer" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black flex items-center gap-2 hover:bg-blue-700"><Video size={14}/> Join Interview</a>
+                                        </div>
+                                    )}
+                                    {app.status === 'accepted' && (
+                                        <button onClick={() => window.location.href = '/chat'} className="p-3 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-600 hover:text-white transition-all"><MessageSquare size={18} /></button>
+                                    )}
+                                </div>
                             </div>
-                            <div className="flex flex-col items-end gap-2">
-                                <span className={`px-4 py-2 rounded-xl text-xs font-black uppercase ${app.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' : app.status === 'interviewing' ? 'bg-blue-100 text-blue-700' : 'bg-zinc-100 text-zinc-500'}`}>
-                                    {app.status}
-                                </span>
-                                {app.status === 'interviewing' && app.meeting_date && (
-                                    <div className="flex flex-col items-end">
-                                        <p className="text-[10px] font-bold text-zinc-500 mb-1 flex items-center gap-1"><Calendar size={12}/> {app.meeting_date}</p>
-                                        <a href={app.meeting_link} target="_blank" rel="noopener noreferrer" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black flex items-center gap-2 hover:bg-blue-700"><Video size={14}/> Join Interview</a>
-                                    </div>
-                                )}
-                                {app.status === 'accepted' && (
-                                    <button onClick={() => window.location.href = '/chat'} className="p-3 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-600 hover:text-white transition-all"><MessageSquare size={18} /></button>
-                                )}
-                            </div>
-                        </div>
-                    ))}
+                        ))
+                    )}
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8">
-                    {displayJobs.map((job, i) => (
-                        <motion.div key={job.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }} className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-zinc-100 shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 cursor-pointer group relative overflow-hidden flex flex-col">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-brand-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
-                            <div className="flex justify-between items-start mb-6 relative z-10">
-                                <div className="w-14 h-14 bg-zinc-50 rounded-2xl flex items-center justify-center group-hover:bg-brand-100 transition-colors"><Briefcase className="text-zinc-400 group-hover:text-brand-600" size={28} /></div>
-                                <span className="text-[10px] font-black text-brand-600 bg-brand-50 px-3 py-1.5 rounded-full uppercase tracking-widest">{job.status}</span>
-                            </div>
-                            <h3 className="font-black text-zinc-900 text-xl group-hover:text-brand-600 transition-colors mb-3 leading-tight">{job.title}</h3>
-                            <p className="text-zinc-500 text-sm font-medium line-clamp-2 mb-6 flex-1">{job.description}</p>
-                            <div className="flex flex-wrap gap-2 mb-8 relative z-10">
-                                {job.tags.map(tag => (<span key={tag} className="text-[10px] font-black uppercase tracking-wider text-zinc-500 bg-zinc-50 px-3 py-1 rounded-lg">{tag}</span>))}
-                            </div>
-                            <div className="pt-6 border-t border-zinc-50 flex justify-between items-center relative z-10">
-                                <div><p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">Budget</p><p className="text-zinc-900 font-black text-lg">{job.budget}</p></div>
+                    {displayJobs.length === 0 ? (
+                        <div className="col-span-full text-center py-10 text-zinc-500 font-medium border-2 border-dashed border-zinc-200 rounded-3xl">No jobs found.</div>
+                    ) : (
+                        displayJobs.map((job, i) => (
+                            <motion.div key={job.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }} className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-zinc-100 shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 cursor-pointer group relative overflow-hidden flex flex-col">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-brand-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
+                                <div className="flex justify-between items-start mb-6 relative z-10">
+                                    <div className="w-14 h-14 bg-zinc-50 rounded-2xl flex items-center justify-center group-hover:bg-brand-100 transition-colors"><Briefcase className="text-zinc-400 group-hover:text-brand-600" size={28} /></div>
+                                    <span className="text-[10px] font-black text-brand-600 bg-brand-50 px-3 py-1.5 rounded-full uppercase tracking-widest">{job.status}</span>
+                                </div>
+                                <h3 className="font-black text-zinc-900 text-xl group-hover:text-brand-600 transition-colors mb-3 leading-tight">{job.title}</h3>
+                                <p className="text-zinc-500 text-sm font-medium line-clamp-2 mb-6 flex-1">{job.description}</p>
+                                <div className="flex flex-wrap gap-2 mb-8 relative z-10">
+                                    {job.tags.map(tag => (<span key={tag} className="text-[10px] font-black uppercase tracking-wider text-zinc-500 bg-zinc-50 px-3 py-1 rounded-lg">{tag}</span>))}
+                                </div>
+                                <div className="pt-6 border-t border-zinc-50 flex justify-between items-center relative z-10">
+                                    <div><p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">Budget</p><p className="text-zinc-900 font-black text-lg">{job.budget}</p></div>
 
-                                {/* --- UPDATED LOGIC HERE: Check if Employer, check if already applied --- */}
-                                {activeTab === 'browse' ? (
-                                    job.employer_address === walletAddress ? (
-                                        <button disabled className="bg-zinc-100 text-zinc-400 px-4 py-2 rounded-xl font-black text-xs cursor-not-allowed border border-zinc-200">Your Post</button>
-                                    ) : myApplications.some(app => app.job_id === job.id) ? (
-                                        <button disabled className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl font-black text-xs cursor-not-allowed flex items-center gap-1 border border-emerald-100">
-                                            <CheckCircle2 size={14}/> Applied
-                                        </button>
+                                    {activeTab === 'browse' ? (
+                                        job.employer_address.toLowerCase() === walletAddress?.toLowerCase() ? (
+                                            <button disabled className="bg-zinc-100 text-zinc-400 px-4 py-2 rounded-xl font-black text-xs cursor-not-allowed border border-zinc-200">
+                                                Your Post
+                                            </button>
+                                        ) : userRole === 'employer' ? (
+                                            <button disabled className="bg-zinc-100 text-zinc-400 px-4 py-2 rounded-xl font-black text-xs cursor-not-allowed border border-zinc-200">
+                                                Employer Account
+                                            </button>
+                                        ) : myApplications.some(app => app.job_id === job.id) ? (
+                                            <button disabled className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl font-black text-xs cursor-not-allowed flex items-center gap-1 border border-emerald-100">
+                                                <CheckCircle2 size={14}/> Applied
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => { setSelectedJob(job); setIsApplyModalOpen(true); }} className="bg-brand-50 text-brand-600 px-4 py-2 rounded-xl font-black text-xs hover:bg-brand-600 hover:text-white transition-all">
+                                                Apply Now
+                                            </button>
+                                        )
                                     ) : (
-                                        <button onClick={() => { setSelectedJob(job); setIsApplyModalOpen(true); }} className="bg-brand-50 text-brand-600 px-4 py-2 rounded-xl font-black text-xs hover:bg-brand-600 hover:text-white transition-all">Apply Now</button>
-                                    )
-                                ) : (
-                                    <button onClick={() => openReviewModal(job)} className="bg-zinc-900 text-white px-4 py-2 rounded-xl font-black text-xs hover:bg-zinc-800 transition-all">View Applicants</button>
-                                )}
-                            </div>
-                        </motion.div>
-                    ))}
+                                        <button onClick={() => openReviewModal(job)} className="bg-zinc-900 text-white px-4 py-2 rounded-xl font-black text-xs hover:bg-zinc-800 transition-all">View Applicants</button>
+                                    )}
+                                </div>
+                            </motion.div>
+                        ))
+                    )}
                 </div>
             )}
 
@@ -289,7 +366,7 @@ export const MarketplaceView: React.FC = () => {
                     <div className="bg-white rounded-[2rem] w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
                         <div className="p-6 border-b flex justify-between items-center shrink-0"><h3 className="text-xl font-black">Applicants</h3><button onClick={() => setIsReviewModalOpen(false)}><X size={20} /></button></div>
                         <div className="p-6 overflow-y-auto space-y-4 flex-1">
-                            {jobApplicants.length === 0 ? <p className="text-center text-zinc-400 py-10">No applicants yet.</p> : jobApplicants.map(app => (
+                            {jobApplicants.length === 0 ? <p className="text-center text-zinc-400 py-10 border-2 border-dashed border-zinc-200 rounded-3xl">No applicants yet.</p> : jobApplicants.map(app => (
                                 <div key={app.id} className="border border-zinc-200 rounded-2xl p-5">
                                     <div className="flex justify-between items-start mb-4">
                                         <div className="flex gap-3 items-center">

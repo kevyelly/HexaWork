@@ -12,11 +12,8 @@ import {
     LayoutDashboard,
     Briefcase,
     MessageSquare,
-    Users,
-    Gavel,
     Menu,
     X,
-    HelpCircle,
 } from "lucide-react";
 import { View } from "./types";
 import { motion, AnimatePresence } from "motion/react";
@@ -24,6 +21,7 @@ import { cn } from "./utils";
 import { SidebarItem } from "./components/SidebarItem";
 import { Header } from "./components/Header";
 import { DashboardView } from "./views/DashboardView";
+import { DashboardSummaryView } from "./views/DashboardSummaryView";
 import { MarketplaceView } from "./views/MarketplaceView";
 import { ProjectChatView } from "./views/ProjectChatView";
 import { LandingPageView } from "./views/LandingPageView";
@@ -57,6 +55,8 @@ function AppContent() {
         setMobileMenuOpen(false);
     };
 
+    const isDashboardActive = location.pathname === "/dashboard" || location.pathname.startsWith("/dashboard/summary");
+
     return (
         <div className="min-h-screen bg-zinc-50 flex overflow-x-hidden">
             <aside
@@ -82,7 +82,7 @@ function AppContent() {
                             key={item.path}
                             icon={item.icon}
                             label={item.label}
-                            active={location.pathname === item.path}
+                            active={item.path === "/dashboard" ? isDashboardActive : location.pathname === item.path}
                             onClick={() => handleNavClick(item.path)}
                             collapsed={!sidebarOpen}
                         />
@@ -145,7 +145,7 @@ function AppContent() {
                                         key={item.path}
                                         icon={item.icon}
                                         label={item.label}
-                                        active={location.pathname === item.path}
+                                        active={item.path === "/dashboard" ? isDashboardActive : location.pathname === item.path}
                                         onClick={() =>
                                             handleNavClick(item.path)
                                         }
@@ -165,7 +165,7 @@ function AppContent() {
             >
                 <Header
                     currentView={
-                        (location.pathname.replace("/", "") ||
+                        (location.pathname.split("/")[1] ||
                             "landing") as View
                     }
                     onMenuClick={() => setMobileMenuOpen(true)}
@@ -176,6 +176,10 @@ function AppContent() {
                             <Route
                                 path="/dashboard"
                                 element={<DashboardView />}
+                            />
+                            <Route
+                                path="/dashboard/summary/:type"
+                                element={<DashboardSummaryView />}
                             />
                             <Route
                                 path="/jobmarket"

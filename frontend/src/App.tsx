@@ -57,21 +57,24 @@ function AppContent() {
     const isDashboardActive = location.pathname === "/dashboard" || location.pathname.startsWith("/dashboard/summary");
 
     return (
-        <div className="min-h-screen bg-zinc-50 flex overflow-x-hidden">
+        <div className="min-h-screen bg-[#f8f7ff] flex overflow-x-hidden">
             <aside
                 className={cn(
-                    "fixed inset-y-0 left-0 z-40 bg-white border-r border-zinc-200 transition-all duration-300 hidden lg:flex flex-col",
+                    "fixed inset-y-0 left-0 z-40 bg-white border-r border-zinc-100 transition-all duration-300 hidden lg:flex flex-col shadow-sm",
                     sidebarOpen ? "w-64" : "w-20",
                 )}
             >
-                <div className="h-20 flex items-center px-6 border-b border-zinc-100">
-                    <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white font-bold flex-shrink-0">
-                        F
+                <div className="h-20 flex items-center px-4 border-b border-zinc-100">
+                    <div className="w-9 h-9 bg-gradient-to-br from-brand-600 to-violet-500 rounded-xl flex items-center justify-center text-white font-black text-base flex-shrink-0 shadow-lg shadow-brand-600/30">
+                        H
                     </div>
                     {sidebarOpen && (
-                        <span className="ml-3 font-bold text-xl tracking-tight">
-                            Escrow
-                        </span>
+                        <div className="ml-3 overflow-hidden">
+                            <span className="font-black text-lg tracking-tight text-zinc-900 block leading-tight">
+                                HexaWork
+                            </span>
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Freelance Platform</span>
+                        </div>
                     )}
                 </div>
 
@@ -91,11 +94,11 @@ function AppContent() {
                 <div className="p-4 border-t border-zinc-100">
                     <button
                         onClick={() => setSidebarOpen(!sidebarOpen)}
-                        className="flex items-center gap-3 w-full px-4 py-3 text-zinc-500 hover:bg-zinc-100 rounded-xl transition-all"
+                        className="flex items-center gap-3 w-full px-4 py-3 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-50 rounded-2xl transition-all text-sm font-bold"
                     >
-                        {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                        {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
                         {sidebarOpen && (
-                            <span className="font-medium">Collapse</span>
+                            <span>Collapse</span>
                         )}
                     </button>
                 </div>
@@ -122,14 +125,15 @@ function AppContent() {
                             }}
                             className="fixed inset-y-0 left-0 w-72 bg-white z-[60] lg:hidden flex flex-col shadow-2xl"
                         >
-                            <div className="h-20 flex items-center justify-between px-6 border-b border-zinc-100">
+                            <div className="h-20 flex items-center justify-between px-5 border-b border-zinc-100">
                                 <div className="flex items-center">
-                                    <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white font-bold">
-                                        F
+                                    <div className="w-9 h-9 bg-gradient-to-br from-brand-600 to-violet-500 rounded-xl flex items-center justify-center text-white font-black text-base shadow-lg shadow-brand-600/30">
+                                        H
                                     </div>
-                                    <span className="ml-3 font-bold text-xl tracking-tight">
-                                        Escrow
-                                    </span>
+                                    <div className="ml-3">
+                                        <span className="font-black text-lg tracking-tight text-zinc-900 block leading-tight">HexaWork</span>
+                                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Freelance Platform</span>
+                                    </div>
                                 </div>
                                 <button
                                     onClick={() => setMobileMenuOpen(false)}

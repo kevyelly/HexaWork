@@ -114,12 +114,12 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onMenuClick }) => {
     const displayTitle = currentView === 'jobmarket' ? 'Marketplace' : currentView;
 
     return (
-        <header className="h-20 bg-white border-b border-zinc-100 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
+        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-zinc-100 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
             <div className="flex items-center gap-4">
                 <button onClick={onMenuClick} className="lg:hidden p-2 hover:bg-zinc-100 rounded-xl transition-colors">
                     <Menu size={20} />
                 </button>
-                <h2 className="text-xl font-black text-zinc-900 capitalize hidden sm:block">
+                <h2 className="text-xl font-black text-zinc-900 capitalize hidden sm:block tracking-tight">
                     {displayTitle}
                 </h2>
             </div>
@@ -129,11 +129,15 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onMenuClick }) => {
                 <div className="relative" ref={notifRef}>
                     <button
                         onClick={() => setIsNotifOpen(!isNotifOpen)}
-                        className={`p-2.5 rounded-full transition-all relative ${isNotifOpen ? 'bg-zinc-200 text-zinc-900' : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-600'}`}
+                        className={`relative p-2.5 rounded-2xl transition-all ${
+                            isNotifOpen
+                                ? 'bg-brand-50 text-brand-600'
+                                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-500'
+                        }`}
                     >
                         <Bell size={18} />
                         {notifications.length > 0 && (
-                            <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white animate-pulse" />
                         )}
                     </button>
 
@@ -177,24 +181,22 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onMenuClick }) => {
 
                 {walletAddress ? (
                     <div className="flex items-center gap-3 pl-4 border-l border-zinc-100">
-                        {/* Combined Profile Box */}
-                        <div className="flex items-center gap-3 p-1.5 pr-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                            <div className="w-8 h-8 bg-gradient-to-tr from-brand-600 to-indigo-500 rounded-xl shadow-sm flex-shrink-0"></div>
-                            
+                        <div className="flex items-center gap-3 p-1.5 pr-4 bg-zinc-50 rounded-2xl border border-zinc-100 hover:border-brand-200 transition-colors">
+                            <div className="w-8 h-8 bg-gradient-to-br from-brand-500 to-violet-500 rounded-xl shadow-sm shadow-brand-600/20 flex-shrink-0" />
                             <div className="flex flex-col justify-center text-left">
                                 <span className="text-sm font-black text-zinc-900 leading-tight tracking-tight">
                                     {fullName || 'Unregistered'}
                                 </span>
                                 <div
                                     onClick={handleCopy}
-                                    className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-zinc-400 hover:text-zinc-600 cursor-pointer transition-colors mt-0.5 group"
+                                    className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-zinc-400 hover:text-brand-600 cursor-pointer transition-colors mt-0.5 group"
                                     title="Copy Wallet Address"
                                 >
                                     {formatAddress(walletAddress)}
                                     {copied ? (
-                                        <Check size={12} className="text-emerald-500" />
+                                        <Check size={11} className="text-emerald-500" />
                                     ) : (
-                                        <Copy size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        <Copy size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                                     )}
                                 </div>
                             </div>
@@ -213,9 +215,12 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onMenuClick }) => {
                         </button>
                     </div>
                 ) : (
-                    <div className="px-4 py-2 bg-zinc-100 text-zinc-500 font-bold rounded-xl text-sm">
-                        Not Connected
-                    </div>
+                    <button
+                        onClick={() => {}}
+                        className="px-5 py-2.5 bg-gradient-to-r from-brand-600 to-violet-600 text-white font-black rounded-2xl text-sm shadow-lg shadow-brand-600/30 hover:scale-105 transition-all"
+                    >
+                        Connect Wallet
+                    </button>
                 )}
             </div>
         </header>

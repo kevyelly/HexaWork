@@ -1,79 +1,89 @@
-# 🚀 Hexawork 
-**Trustless. Fair. Decentralized. The AI-Powered Escrow for the Gig Economy.**
+<div align="center">
+  
+  <img src="https://via.placeholder.com/150?text=HexaWork+Logo" alt="HexaWork Logo" width="120" />
 
-Hexawork is a decentralized freelance platform that replaces blind trust with immutable code. By combining **Dual-Staking Smart Contracts** on the Polkadot Hub EVM with an **Objective AI Mediator**, we ensure that clients get what they paid for and freelancers always get paid for their work.
+  # HexaWork
+  
+  **Trustless. Fair. Decentralized. The AI-Powered Escrow for the Gig Economy.**
 
----
+  [![React 19](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
+  [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+  [![Solidity](https://img.shields.io/badge/Solidity-363636?style=for-the-badge&logo=solidity&logoColor=white)](https://soliditylang.org/)
+  [![Polkadot](https://img.shields.io/badge/Polkadot_EVM-E6007A?style=for-the-badge&logo=polkadot&logoColor=white)](https://polkadot.network/)
+  [![LangGraph](https://img.shields.io/badge/AI_Agent-LangGraph-FF4F00?style=for-the-badge)](https://langchain.com/)
 
-## 🧠 Why Hexawork?
-* **Dual-Staking Escrow:** Clients lock project funds; Freelancers lock a 5% "Commitment Stake." Both parties have skin in the game.
-* **AI-Transcribed Interviews:** Video calls automatically transcribe the "Scope of Work" into immutable contract terms.
-* **Cryptographic Deadlines:** Time-locked contracts automatically handle refunds and stake-slashing if deadlines are missed.
-* **AI Arbitrator:** An automated LangGraph agent that audit code (GitHub), verifies live sites (Firecrawl), and analyzes chat history to render fair verdicts instantly.
+</div>
 
----
+<br/>
 
-## 🛠️ Tech Stack
+## Work with Confidence. Get Paid Instantly.
 
-### **Frontend (Vite + React 19)**
-* **Vite / React 19:** Modern, fast UI with concurrent rendering.
-* **Tailwind CSS 4:** Sleek, high-performance styling.
-* **Supabase:** Real-time chat (WebSockets), persistent milestone storage, and document hosting.
-* **Ethers.js v6:** Interaction with Polkadot Hub EVM Smart Contracts.
-* **Motion:** Fluid, high-end animations (formerly Framer Motion).
-
-### **Backend (AI & Services)**
-* **AI Arbitrator (FastAPI + LangGraph):** Multi-agent system (Auditor, Scraper, Judge) using GPT-4o-mini for dispute resolution.
-* **Web Scraping:** Firecrawl for real-time UI/UX verification of live project sites.
-* **Meeting Service (Node.js/Express):** Integration with Zoom API for automated meeting memos.
-
-### **Blockchain (Smart Contracts)**
-* **Solidity:** Custom Escrow logic on Polkadot Hub EVM.
-* **On-Chain Milestones:** Payment releases are triggered via on-chain approval or AI verdict.
+Freelancing is broken. Clients fear being ghosted, and freelancers fear being ignored when it is time to get paid. HexaWork replaces "blind trust" with automated code and fair mediation. It is a marketplace where terms are absolute, deadlines are enforced by code, and payment is guaranteed upon delivery.
 
 ---
 
-## 🏗️ Project Structure
+## Why HexaWork?
+
+HexaWork is a protocol designed to balance human fairness with machine precision.
+
+* **Commitment Staking**
+  To prevent spam and ensure project integrity, clients lock 100% of the project funds in escrow, while freelancers lock a 3% "Commitment Stake" to signal their intent to deliver.
+
+* **AI-Driven Verification**
+  HexaWork utilizes a LangGraph-powered AI agent to audit GitHub commits and verify live deployments via Firecrawl. If the output matches the pre-defined acceptance criteria, the milestone is approved automatically.
+
+* **The Right to Appeal Penalty**
+  If the AI Oracle rejects a submission, the freelancer may appeal to a decentralized human jury. To prevent frivolous disputes, the 3% stake is forfeited as a penalty if the human jury confirms the AI's rejection was correct.
+
+* **Ghost-Proof Payouts**
+  On HexaWork, silence is treated as consent. When a freelancer submits work, a 72-hour review timer begins. If the client does not respond or initiate a dispute within this window, the smart contract automatically releases the funds.
+
+* **Instant Liquidity**
+  The moment work is verified—whether by AI, client approval, or a jury verdict—the funds and the original stake are released to the freelancer's wallet immediately via the Polkadot EVM.
+
+---
+
+## How It Works
+
+1. **Hire:** Establish clear milestones and technical acceptance criteria.
+2. **Lock:** The client funds the project and pays a flat Oracle Fee. The freelancer locks their 3% commitment stake.
+3. **Build:** Freelancer submits work via GitHub. The AI Oracle verifies the technical requirements in real-time.
+4. **Finalize:** Payout occurs automatically after 72 hours of client inactivity or upon successful verification.
+
+---
+
+## Monetization
+
+HexaWork maintains protocol sustainability through two primary channels:
+* **Oracle Fees:** A flat fee paid by the client per project to cover the computational costs of AI auditing and data scraping.
+* **Penalty Capture:** A portion of forfeited stakes from failed human appeals is routed to the protocol treasury to fund ongoing development and jury incentives.
+
+---
+
+## Tech Stack
+
+### Frontend
+* React 19, Vite, Tailwind CSS 4, Motion, Ethers.js v6.
+
+### Backend & AI
+* FastAPI (Python), LangGraph (AI Agents), Supabase (Real-time DB).
+
+### Blockchain
+* Solidity (Smart Contracts), Polkadot Hub EVM (Execution Layer).
+
+---
+
+## Quick Start
+
+### Prerequisites
+* Node.js 18+
+* Python 3.10+
+* MetaMask
+
+### 1. Backend & AI Oracle
 ```bash
-├── frontend/               # React 19 Client App
-│   ├── src/lib/supabase.ts # Database & Auth configuration
-│   └── src/views/          # UI components (Dashboard, Chat, Disputes)
-├── backend/                # Server-Side Services
-│   ├── src/main.py         # AI Arbitrator API (Python/FastAPI)
-│   ├── src/agents.py       # LangGraph Agent logic
-│   ├── src/tools.py        # Code auditing & Web scraping tools
-│   └── src/server.ts       # Zoom Meeting Integration (Node.js/Express)
-└── requirements.txt        # Backend dependencies
-```
-
----
-
-## 🚀 Getting Started
-
-### **Prerequisites**
-* **Node.js** (v18+) & **Python** (v3.10+)
-* **MetaMask** (configured for Polkadot Hub EVM)
-* **API Keys:** Supabase, OpenAI, Firecrawl, and Zoom.
-
-### **1. AI Arbitrator (Python Backend)**
-1. **Navigate to backend:** `cd backend`
-2. **Setup environment:** Create a `.env` with `OPENAI_API_KEY` and `FIRECRAWL_API_KEY`.
-3. **Install deps:** `pip install -r requirements.txt`
-4. **Run Server:** `python src/main.py` (Runs on port 8000)
-
-### **2. Meeting Service (Node Backend)**
-1. **From root/frontend:** Ensure `npm install` has been run.
-2. **Setup environment:** Create a `.env` in `backend/` with `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, and `ZOOM_ACCOUNT_ID`.
-3. **Run Service:** `npx tsx backend/src/server.ts` (Runs on port 3001)
-
-### **3. Frontend (React Client)**
-1. **Navigate to frontend:** `cd frontend`
-2. **Install deps:** `npm install`
-3. **Setup environment:** Create a `.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-4. **Launch:** `npm run dev` (Runs on port 3000)
-
----
-
-## 🤝 Community & Support
-* **Hackathon:** Built for Polkadot Hub.
-* **Inquiries:** 📍 PH-based startup focusing on the local gig economy.
+cd backend
+python -m venv venv
+source venv/bin/activate 
+pip install -r requirements.txt
+uvicorn main:app --reload

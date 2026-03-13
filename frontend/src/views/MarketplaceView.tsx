@@ -8,7 +8,7 @@ import { ethers } from 'ethers';
 import { ESCROW_ABI, ESCROW_BYTECODE } from '../lib/escrowContract';
 
 interface Job { id: string; employer_address: string; title: string; description: string; budget: string; tags: string[]; status: string; created_at: string; milestones_json?: any[]; contract_address?: string; }
-interface Application { id: string; job_id: string; freelancer_address: string; cover_letter: string; resume_url?: string; status: string; created_at: string; meeting_date?: string; meeting_link?: string; hired_at?: string; jobs?: Job; }
+interface Application { id: string; job_id: string; freelancer_address: string; cover_letter: string; resume_url?: string; status: string; created_at: string; meeting_date?: string; meeting_link?: string; jobs?: Job; }
 
 export const MarketplaceView: React.FC = () => {
     const { walletAddress } = useWallet();
@@ -37,13 +37,6 @@ export const MarketplaceView: React.FC = () => {
     const [coverLetter, setCoverLetter] = useState('');
     const [resumeFile, setResumeFile] = useState<File | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
-
-    const [now, setNow] = useState(Date.now());
-
-    useEffect(() => {
-        const interval = setInterval(() => setNow(Date.now()), 1000);
-        return () => clearInterval(interval);
-    }, []);
 
     useEffect(() => {
         if ((location.state as any)?.tab) setActiveTab((location.state as any).tab);
@@ -120,7 +113,7 @@ export const MarketplaceView: React.FC = () => {
             const { error: appError } = await supabase.from('applications').insert([{ job_id: selectedJob.id, freelancer_address: walletAddress.toLowerCase(), cover_letter: coverLetter, resume_url: resumeUrl, status: 'pending' }]);
             if (appError) throw new Error("DB Error (Apply): " + appError.message);
 
-            const { error: notifError } = await supabase.from('notifications').insert([{ room_id: selectedJob.id, wallet_address: selectedJob.employer_address.toLowerCase(), content: `New Application: A freelancer applied to "${selectedJob.title}".` }]);
+            const { error: notifError } = await supabase.from('notifications').insert([{ room_id: `job_${selectedJob.id}`, wallet_address: selectedJob.employer_address.toLowerCase(), content: `New Application: A freelancer applied to "${selectedJob.title}".` }]);
             if (notifError) console.error("Notification failed:", notifError.message);
 
             setIsApplyModalOpen(false); setCoverLetter(''); setResumeFile(null);
@@ -151,7 +144,7 @@ export const MarketplaceView: React.FC = () => {
             if (error) throw new Error("DB Error (Schedule): " + error.message);
 
             await supabase.from('notifications').insert([{
-                room_id: selectedJob?.id, wallet_address: selectedApplicant.freelancer_address.toLowerCase(),
+                room_id: `job_${selectedJob?.id}`, wallet_address: selectedApplicant.freelancer_address.toLowerCase(),
                 content: `Interview Scheduled! The employer wants to meet on ${formattedDateTime}. Check your My Applications tab for the link.`
             }]);
 
@@ -190,13 +183,13 @@ export const MarketplaceView: React.FC = () => {
             const { error: jobErr } = await supabase.from('jobs').update({ status: 'in-progress', contract_address: contractAddress }).eq('id', jobToAccept.id);
             if (jobErr) throw new Error("DB Error (Job Update): " + jobErr.message);
 
-            const { error: appErr } = await supabase.from('applications').update({ status: 'pending_stake', hired_at: new Date().toISOString() }).eq('id', appId);
+            const { error: appErr } = await supabase.from('applications').update({ status: 'pending_stake' }).eq('id', appId);
             if (appErr) throw new Error("DB Error (App Update): " + appErr.message);
 
             const { error: notifErr } = await supabase.from('notifications').insert([{
-                room_id: jobToAccept.id,
+                room_id: `job_${jobToAccept.id}`,
                 wallet_address: freelancerAddr.toLowerCase(),
-                content: `You are Hired! The employer has funded the Escrow. Please stake your 5% within 24 hours to unlock the workspace.`
+                content: `You are Hired! The employer has funded the Escrow. Please go to your Applications tab to stake your 5% and unlock the workspace.`
             }]);
 
             if (notifErr) alert(`WARNING: Contract succeeded, but Notification failed to send: ${notifErr.message}`);
@@ -208,31 +201,6 @@ export const MarketplaceView: React.FC = () => {
             console.error(err);
             alert(`Failed to hire: ${err.reason || err.message}`);
         } finally { setIsProcessing(false); }
-    };
-
-    const handleClaimRefund = async (app: Application, job: Job) => {
-        setIsProcessing(true);
-        try {
-            if (!window.ethereum) throw new Error("Wallet not connected.");
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            const contract = new ethers.Contract(job.contract_address!, ESCROW_ABI, signer);
-
-            const tx = await contract.claimRefund();
-            await tx.wait();
-
-            await supabase.from('jobs').update({ status: 'cancelled' }).eq('id', job.id);
-            await supabase.from('applications').update({ status: 'cancelled' }).eq('id', app.id);
-
-            alert("Refund successful. Project has been cancelled due to the freelancer missing the staking window.");
-            setIsReviewModalOpen(false);
-            fetchData();
-        } catch (error: any) {
-            console.error(error);
-            alert(`Refund failed: ${error.reason || error.message}`);
-        } finally {
-            setIsProcessing(false);
-        }
     };
 
     const handleFreelancerStake = async (app: Application) => {
@@ -250,7 +218,7 @@ export const MarketplaceView: React.FC = () => {
             const tx = await contract.stakeFreelancer({ value: stakeAmount, gasLimit: 300000 });
             await tx.wait();
 
-            const roomId = app.job_id;
+            const roomId = [app.jobs.employer_address.toLowerCase(), walletAddress!.toLowerCase()].sort().join('_');
 
             if (app.jobs?.milestones_json && app.jobs.milestones_json.length > 0) {
                 const msToInsert = app.jobs.milestones_json.map((m: any) => {
@@ -266,8 +234,7 @@ export const MarketplaceView: React.FC = () => {
             const { error: msgErr } = await supabase.from('messages').insert([{
                 content: `[System] Contract Finalized! Contract Address: ${app.jobs.contract_address}`,
                 sender_address: app.jobs.employer_address.toLowerCase(),
-                receiver_address: walletAddress!.toLowerCase(),
-                room_id: roomId
+                receiver_address: walletAddress!.toLowerCase()
             }]);
 
             if (msgErr) throw new Error("Chat Initialization Failed: " + msgErr.message);
@@ -317,59 +284,36 @@ export const MarketplaceView: React.FC = () => {
                     {myApplications.length === 0 ? (
                         <div className="text-center py-10 text-zinc-500 font-medium border-2 border-dashed border-zinc-200 rounded-3xl">You have not applied to any jobs yet.</div>
                     ) : (
-                        myApplications.map(app => {
-                            let isExpired = false;
-                            let countdown = '';
-                            if (app.status === 'pending_stake' && app.hired_at) {
-                                const deadline = new Date(app.hired_at).getTime() + 24 * 60 * 60 * 1000;
-                                isExpired = now > deadline;
-                                if (!isExpired) {
-                                    const diff = Math.max(0, deadline - now);
-                                    const hours = Math.floor(diff / (1000 * 60 * 60));
-                                    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                                    const secs = Math.floor((diff % (1000 * 60)) / 1000);
-                                    countdown = `${hours}h ${mins}m ${secs}s`;
-                                }
-                            }
-
-                            return (
-                                <div key={app.id} className="bg-white p-6 rounded-[2rem] border border-zinc-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                    <div>
-                                        <h3 className="font-black text-lg">{app.jobs?.title}</h3>
-                                        <p className="text-sm text-zinc-500">Applied on: {new Date(app.created_at).toLocaleDateString()}</p>
-                                    </div>
-                                    <div className="flex flex-col items-end gap-2">
-                                        <span className={`px-4 py-2 rounded-xl text-xs font-black uppercase ${app.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' : app.status === 'pending_stake' ? 'bg-amber-100 text-amber-700' : app.status === 'interviewing' ? 'bg-blue-100 text-blue-700' : 'bg-zinc-100 text-zinc-500'}`}>
-                                            {app.status === 'pending_stake' ? 'Hired - Stake Required' : app.status}
-                                        </span>
-
-                                        {app.status === 'interviewing' && app.meeting_date && (
-                                            <div className="flex flex-col items-end">
-                                                <p className="text-[10px] font-bold text-zinc-500 mb-1 flex items-center gap-1"><Calendar size={12}/> {app.meeting_date}</p>
-                                                <a href={app.meeting_link} target="_blank" rel="noopener noreferrer" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black flex items-center gap-2 hover:bg-blue-700"><Video size={14}/> Join Interview</a>
-                                            </div>
-                                        )}
-
-                                        {app.status === 'pending_stake' && (
-                                            <div className="flex flex-col items-end gap-1 mt-2">
-                                                {app.hired_at && (
-                                                    <span className={`text-[10px] font-black uppercase tracking-widest ${isExpired ? 'text-red-500' : 'text-amber-500'}`}>
-                                                        {isExpired ? 'Staking Period Expired' : `Time to stake: ${countdown}`}
-                                                    </span>
-                                                )}
-                                                <button onClick={() => handleFreelancerStake(app)} disabled={isProcessing || isExpired} className="p-3 bg-amber-500 text-white font-black rounded-xl hover:bg-amber-600 transition-all text-xs flex items-center gap-2 shadow-md disabled:opacity-50">
-                                                    {isProcessing ? <Loader2 className="animate-spin" size={16}/> : <Coins size={16} />} Stake 5% to Begin
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {app.status === 'accepted' && (
-                                            <button onClick={() => navigate('/chat')} className="p-3 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-600 hover:text-white transition-all"><MessageSquare size={18} /></button>
-                                        )}
-                                    </div>
+                        myApplications.map(app => (
+                            <div key={app.id} className="bg-white p-6 rounded-[2rem] border border-zinc-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div>
+                                    <h3 className="font-black text-lg">{app.jobs?.title}</h3>
+                                    <p className="text-sm text-zinc-500">Applied on: {new Date(app.created_at).toLocaleDateString()}</p>
                                 </div>
-                            );
-                        })
+                                <div className="flex flex-col items-end gap-2">
+                                    <span className={`px-4 py-2 rounded-xl text-xs font-black uppercase ${app.status === 'accepted' ? 'bg-emerald-100 text-emerald-700' : app.status === 'pending_stake' ? 'bg-amber-100 text-amber-700' : app.status === 'interviewing' ? 'bg-blue-100 text-blue-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                                        {app.status === 'pending_stake' ? 'Hired - Stake Required' : app.status}
+                                    </span>
+
+                                    {app.status === 'interviewing' && app.meeting_date && (
+                                        <div className="flex flex-col items-end">
+                                            <p className="text-[10px] font-bold text-zinc-500 mb-1 flex items-center gap-1"><Calendar size={12}/> {app.meeting_date}</p>
+                                            <a href={app.meeting_link} target="_blank" rel="noopener noreferrer" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black flex items-center gap-2 hover:bg-blue-700"><Video size={14}/> Join Interview</a>
+                                        </div>
+                                    )}
+
+                                    {app.status === 'pending_stake' && (
+                                        <button onClick={() => handleFreelancerStake(app)} disabled={isProcessing} className="p-3 bg-amber-500 text-white font-black rounded-xl hover:bg-amber-600 transition-all text-xs flex items-center gap-2 shadow-md">
+                                            {isProcessing ? <Loader2 className="animate-spin" size={16}/> : <Coins size={16} />} Stake 5% to Begin
+                                        </button>
+                                    )}
+
+                                    {app.status === 'accepted' && (
+                                        <button onClick={() => navigate('/chat')} className="p-3 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-600 hover:text-white transition-all"><MessageSquare size={18} /></button>
+                                    )}
+                                </div>
+                            </div>
+                        ))
                     )}
                 </div>
             ) : (
@@ -499,18 +443,7 @@ export const MarketplaceView: React.FC = () => {
                                                 </button>
                                             )}
                                             {app.status === 'pending_stake' && (
-                                                <div className="flex items-center gap-2">
-                                                    <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase rounded-full flex items-center gap-1"><Loader2 size={12} className="animate-spin"/> Waiting on Stake</span>
-                                                    {app.hired_at && Date.now() > new Date(app.hired_at).getTime() + 24 * 60 * 60 * 1000 && (
-                                                        <button
-                                                            onClick={() => handleClaimRefund(app, selectedJob)}
-                                                            disabled={isProcessing}
-                                                            className="px-3 py-1 bg-red-600 text-white text-[10px] font-black uppercase rounded-lg hover:bg-red-700 transition-all flex items-center gap-1 shadow-sm"
-                                                        >
-                                                            {isProcessing ? <Loader2 size={12} className="animate-spin"/> : "Claim Refund (Expired)"}
-                                                        </button>
-                                                    )}
-                                                </div>
+                                                <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-black uppercase rounded-full flex items-center gap-1"><Loader2 size={12} className="animate-spin"/> Waiting on Stake</span>
                                             )}
                                             {app.status === 'accepted' && (
                                                 <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase rounded-full flex items-center gap-1"><CheckCircle2 size={12}/> Hired</span>

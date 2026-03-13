@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Menu, Bell, Copy, Check, X } from 'lucide-react';
+import { Search, Bell, Menu, Wallet, LogOut, Copy, Check, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../lib/WalletContext';
 import { supabase } from '../lib/supabase';
 import { View } from '../types';
@@ -10,7 +11,9 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ currentView, onMenuClick }) => {
-    const { walletAddress } = useWallet();
+    // Combined Hooks
+    const { walletAddress, connectWallet, disconnectWallet } = useWallet();
+    const navigate = useNavigate();
     const [fullName, setFullName] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
 
@@ -174,25 +177,40 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onMenuClick }) => {
 
                 {walletAddress ? (
                     <div className="flex items-center gap-3 pl-4 border-l border-zinc-100">
-                        <div className="w-10 h-10 bg-gradient-to-tr from-brand-600 to-indigo-500 rounded-full shadow-sm flex-shrink-0"></div>
-
-                        <div className="flex flex-col justify-center">
-                            <span className="text-sm font-black text-zinc-900 leading-tight tracking-tight">
-                                {fullName || 'Unregistered'}
-                            </span>
-                            <div
-                                onClick={handleCopy}
-                                className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-zinc-400 hover:text-zinc-600 cursor-pointer transition-colors mt-0.5 group"
-                                title="Copy Wallet Address"
-                            >
-                                {formatAddress(walletAddress)}
-                                {copied ? (
-                                    <Check size={12} className="text-emerald-500" />
-                                ) : (
-                                    <Copy size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                                )}
+                        {/* Combined Profile Box */}
+                        <div className="flex items-center gap-3 p-1.5 pr-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                            <div className="w-8 h-8 bg-gradient-to-tr from-brand-600 to-indigo-500 rounded-xl shadow-sm flex-shrink-0"></div>
+                            
+                            <div className="flex flex-col justify-center text-left">
+                                <span className="text-sm font-black text-zinc-900 leading-tight tracking-tight">
+                                    {fullName || 'Unregistered'}
+                                </span>
+                                <div
+                                    onClick={handleCopy}
+                                    className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-zinc-400 hover:text-zinc-600 cursor-pointer transition-colors mt-0.5 group"
+                                    title="Copy Wallet Address"
+                                >
+                                    {formatAddress(walletAddress)}
+                                    {copied ? (
+                                        <Check size={12} className="text-emerald-500" />
+                                    ) : (
+                                        <Copy size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    )}
+                                </div>
                             </div>
                         </div>
+
+                        {/* Your Logout Button */}
+                        <button 
+                            onClick={() => {
+                                disconnectWallet();
+                                navigate('/');
+                            }}
+                            className="p-2 text-zinc-500 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            title="Disconnect Wallet"
+                        >
+                            <LogOut size={20} />
+                        </button>
                     </div>
                 ) : (
                     <div className="px-4 py-2 bg-zinc-100 text-zinc-500 font-bold rounded-xl text-sm">

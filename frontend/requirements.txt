@@ -1,0 +1,17 @@
+@google/genai
+@supabase/supabase-js
+@tailwindcss/vite
+@vitejs/plugin-react
+better-sqlite3
+clsx
+dotenv
+ethers
+express
+lucide-react
+motion
+react
+react-dom
+react-markdown
+react-router-dom
+tailwind-merge
+vite

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, User, Clock, Calendar as CalendarIcon, FileText, CheckCircle, CheckCircle2, AlertTriangle, Loader2, Video } from 'lucide-react';
+import { Briefcase, User, Clock, Calendar as CalendarIcon, FileText, CheckCircle, CheckCircle2, AlertTriangle, Loader2, Video, TrendingUp } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useWallet } from '../lib/WalletContext';
 import { cn } from '../utils';
@@ -26,7 +26,8 @@ export const DashboardView: React.FC = () => {
 
     // Dynamic Stats & Meetings
     const [stats, setStats] = useState({ stat1: 0, stat2: 0, stat3: 0 });
-    const [metrics, setMetrics] = useState({ active: 0, approvals: 0, pending: 0, disputes: 0 });
+    const [freelancerMetrics, setFreelancerMetrics] = useState({ activeJobs: 0, pendingApps: 0, interviews: 0, completed: 0 });
+    const [employerMetrics, setEmployerMetrics] = useState({ posted: 0, activeJobs: 0, toReview: 0, interviews: 0 });
     const [activeProjects, setActiveProjects] = useState<any[]>([]);
     const [upcomingMeetings, setUpcomingMeetings] = useState<any[]>([]);
 
@@ -48,10 +49,16 @@ export const DashboardView: React.FC = () => {
             .eq('wallet_address', lowerWallet)
             .single();
 
-        if (data) {
+        if (data && data.role) {
             setProfile(data);
             await fetchDashboardData(data.role, lowerWallet);
         } else {
+            // Profile exists but is incomplete (e.g. created by WalletContext stub)
+            // or profile doesn't exist at all.
+            if (data) {
+                setProfile(data);
+                setRegName(data.full_name || '');
+            }
             setIsRegisterModalOpen(true);
             setIsLoading(false);
         }
@@ -65,7 +72,7 @@ export const DashboardView: React.FC = () => {
         const lowerWallet = walletAddress.toLowerCase();
         const newProfile = { wallet_address: lowerWallet, full_name: regName, role: regRole };
 
-        const { error } = await supabase.from('users').insert([newProfile]);
+        const { error } = await supabase.from('users').upsert([newProfile]);
 
         if (!error) {
             setProfile(newProfile);
@@ -79,66 +86,58 @@ export const DashboardView: React.FC = () => {
     };
 
     const fetchDashboardData = async (role: string, wallet: string) => {
-        // --- Role-specific stats for StatCards ---
         if (role === 'freelancer') {
-            const [ongoing, pending, completed, projectsRes, meetingsRes] = await Promise.all([
-                supabase.from('applications').select('*', { count: 'exact' }).eq('freelancer_address', wallet).eq('status', 'accepted'),
-                supabase.from('applications').select('*', { count: 'exact' }).eq('freelancer_address', wallet).in('status', ['pending', 'interviewing']),
-                supabase.from('applications').select('*', { count: 'exact' }).eq('freelancer_address', wallet).eq('status', 'completed'),
+            const [activeJobs, pendingApps, interviews, completed, projectsRes, meetingsRes] = await Promise.all([
+                supabase.from('applications').select('*', { count: 'exact', head: true }).eq('freelancer_address', wallet).eq('status', 'accepted'),
+                supabase.from('applications').select('*', { count: 'exact', head: true }).eq('freelancer_address', wallet).eq('status', 'pending'),
+                supabase.from('applications').select('*', { count: 'exact', head: true }).eq('freelancer_address', wallet).eq('status', 'interviewing'),
+                supabase.from('applications').select('*', { count: 'exact', head: true }).eq('freelancer_address', wallet).eq('status', 'completed'),
                 supabase.from('applications').select('*, jobs(*)').eq('freelancer_address', wallet).eq('status', 'accepted').limit(5),
-                supabase.from('applications').select('*, jobs(title)').eq('freelancer_address', wallet).eq('status', 'interviewing')
+                supabase.from('applications').select('*, jobs(title)').eq('freelancer_address', wallet).eq('status', 'interviewing'),
             ]);
-            setStats({ stat1: ongoing.count || 0, stat2: pending.count || 0, stat3: completed.count || 0 });
+            setStats({ stat1: activeJobs.count || 0, stat2: pendingApps.count || 0, stat3: completed.count || 0 });
+            setFreelancerMetrics({
+                activeJobs: activeJobs.count || 0,
+                pendingApps: pendingApps.count || 0,
+                interviews: interviews.count || 0,
+                completed: completed.count || 0,
+            });
             if (projectsRes.data) setActiveProjects(projectsRes.data);
-            if (meetingsRes.data) setUpcomingMeetings(meetingsRes.data.filter(m => m.meeting_date));
+            if (meetingsRes.data) setUpcomingMeetings(meetingsRes.data.filter((m: any) => m.meeting_date));
         } else {
+            // Fetch all employer job IDs first
             const jobsRes = await supabase.from('jobs').select('id').eq('employer_address', wallet);
-            const jobIds = jobsRes.data ? jobsRes.data.map(j => j.id) : [];
-            let appsToReviewCount = 0;
+            const jobIds = jobsRes.data ? jobsRes.data.map((j: any) => j.id) : [];
+
+            let toReviewCount = 0;
+            let interviewCount = 0;
             let fetchedMeetings: any[] = [];
+
             if (jobIds.length > 0) {
-                const [appsRes, meetingsRes] = await Promise.all([
-                    supabase.from('applications').select('*', { count: 'exact' }).in('job_id', jobIds).eq('status', 'pending'),
-                    supabase.from('applications').select('*, jobs(title)').in('job_id', jobIds).eq('status', 'interviewing')
+                const [appsRes, interviewsRes] = await Promise.all([
+                    supabase.from('applications').select('*', { count: 'exact', head: true }).in('job_id', jobIds).eq('status', 'pending'),
+                    supabase.from('applications').select('*, jobs(title)').in('job_id', jobIds).eq('status', 'interviewing'),
                 ]);
-                appsToReviewCount = appsRes.count || 0;
-                if (meetingsRes.data) fetchedMeetings = meetingsRes.data.filter(m => m.meeting_date);
+                toReviewCount = appsRes.count || 0;
+                interviewCount = interviewsRes.count || 0;
+                if (interviewsRes.data) fetchedMeetings = interviewsRes.data.filter((m: any) => m.meeting_date);
             }
-            const [posted, ongoing, projectsRes] = await Promise.all([
-                supabase.from('jobs').select('*', { count: 'exact' }).eq('employer_address', wallet),
-                supabase.from('jobs').select('*', { count: 'exact' }).eq('employer_address', wallet).eq('status', 'in-progress'),
-                supabase.from('jobs').select('*').eq('employer_address', wallet).eq('status', 'in-progress').limit(5)
+
+            const [posted, ongoingJobs, projectsRes] = await Promise.all([
+                supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('employer_address', wallet),
+                supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('employer_address', wallet).eq('status', 'in-progress'),
+                supabase.from('jobs').select('*').eq('employer_address', wallet).eq('status', 'in-progress').limit(5),
             ]);
-            setStats({ stat1: posted.count || 0, stat2: ongoing.count || 0, stat3: appsToReviewCount });
+            setStats({ stat1: posted.count || 0, stat2: ongoingJobs.count || 0, stat3: toReviewCount });
+            setEmployerMetrics({
+                posted: posted.count || 0,
+                activeJobs: ongoingJobs.count || 0,
+                toReview: toReviewCount,
+                interviews: interviewCount,
+            });
             if (projectsRes.data) setActiveProjects(projectsRes.data);
             setUpcomingMeetings(fetchedMeetings);
         }
-
-        // --- Global metrics (the 4-card overview) ---
-        const [employerJobsRes, freelancerAppsRes, approvalsRes, freelancerPendingRes, disputesRes, myJobsRes] = await Promise.all([
-            supabase.from('jobs').select('*', { count: 'exact', head: true }).ilike('employer_address', wallet).eq('status', 'in-progress'),
-            supabase.from('applications').select('*', { count: 'exact', head: true }).ilike('freelancer_address', wallet).eq('status', 'accepted'),
-            supabase.from('project_milestones').select('*', { count: 'exact', head: true }).eq('status', 'submitted').ilike('project_id', `%${wallet}%`),
-            supabase.from('applications').select('*', { count: 'exact', head: true }).ilike('freelancer_address', wallet).eq('status', 'pending'),
-            supabase.from('project_milestones').select('*', { count: 'exact', head: true }).eq('status', 'rejected').ilike('project_id', `%${wallet}%`),
-            supabase.from('jobs').select('id').ilike('employer_address', wallet),
-        ]);
-
-        const totalActive = (employerJobsRes.count || 0) + (freelancerAppsRes.count || 0);
-
-        let employerPendingCount = 0;
-        if (myJobsRes.data && myJobsRes.data.length > 0) {
-            const jobIds = myJobsRes.data.map((j: any) => j.id);
-            const { count } = await supabase.from('applications').select('*', { count: 'exact', head: true }).in('job_id', jobIds).eq('status', 'pending');
-            employerPendingCount = count || 0;
-        }
-
-        setMetrics({
-            active: totalActive,
-            approvals: approvalsRes.count || 0,
-            pending: (freelancerPendingRes.count || 0) + employerPendingCount,
-            disputes: disputesRes.count || 0,
-        });
 
         setIsLoading(false);
     };
@@ -195,27 +194,33 @@ export const DashboardView: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* 4-metric overview */}
+                    {/* Role-specific 4-metric overview */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                        {[
-                            { label: 'Active Escrows',        value: metrics.active,    change: 'In Progress', icon: Briefcase,     color: 'text-indigo-600', bg: 'bg-indigo-50',  emoji: '🔒' },
-                            { label: 'Pending Approvals',     value: metrics.approvals, change: 'Action Req',  icon: CheckCircle2,  color: 'text-amber-600',  bg: 'bg-amber-50',   emoji: '⏳' },
-                            { label: 'Pending Applications',  value: metrics.pending,   change: 'Marketplace', icon: FileText,      color: 'text-emerald-600',bg: 'bg-emerald-50', emoji: '📋' },
-                            { label: 'Recent Disputes',       value: metrics.disputes,  change: 'All Good',    icon: AlertTriangle, color: 'text-zinc-400',   bg: 'bg-zinc-100',   emoji: '⚖️'  },
-                        ].map((stat, i) => (
+                        {(profile.role === 'freelancer' ? [
+                            { label: 'Active Jobs',           value: freelancerMetrics.activeJobs,  badge: 'In Progress', icon: Briefcase,     color: 'text-indigo-600',  bg: 'bg-indigo-50',  emoji: '🔒', route: () => navigate('/dashboard/summary/ongoing') },
+                            { label: 'Pending Applications',  value: freelancerMetrics.pendingApps, badge: 'Awaiting',    icon: FileText,      color: 'text-amber-600',   bg: 'bg-amber-50',   emoji: '📋', route: () => navigate('/dashboard/summary/pending') },
+                            { label: 'Interviews Scheduled',  value: freelancerMetrics.interviews,  badge: 'Upcoming',    icon: CalendarIcon,  color: 'text-brand-600',   bg: 'bg-brand-50',   emoji: '📅', route: () => navigate('/calendar') },
+                            { label: 'Completed Jobs',        value: freelancerMetrics.completed,   badge: 'Done',        icon: CheckCircle2,  color: 'text-emerald-600', bg: 'bg-emerald-50', emoji: '✅', route: () => navigate('/dashboard/summary/completed') },
+                        ] : [
+                            { label: 'Jobs Posted',           value: employerMetrics.posted,     badge: 'Total',       icon: FileText,      color: 'text-brand-600',   bg: 'bg-brand-50',   emoji: '📝', route: () => navigate('/jobmarket', { state: { tab: 'my-jobs' } }) },
+                            { label: 'Active Jobs',           value: employerMetrics.activeJobs, badge: 'In Progress', icon: Briefcase,     color: 'text-indigo-600',  bg: 'bg-indigo-50',  emoji: '🔒', route: () => navigate('/dashboard/summary/ongoing') },
+                            { label: 'Apps to Review',        value: employerMetrics.toReview,   badge: 'Action Req',  icon: Clock,         color: 'text-amber-600',   bg: 'bg-amber-50',   emoji: '⏳', route: () => navigate('/dashboard/summary/review') },
+                            { label: 'Interviews Scheduled',  value: employerMetrics.interviews, badge: 'Upcoming',    icon: CalendarIcon,  color: 'text-emerald-600', bg: 'bg-emerald-50', emoji: '📅', route: () => navigate('/calendar') },
+                        ]).map((stat, i) => (
                             <motion.div
                                 key={stat.label}
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: i * 0.1 }}
-                                className="bg-white p-6 rounded-[2rem] border border-zinc-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group"
+                                onClick={stat.route}
+                                className="bg-white p-6 rounded-[2rem] border border-zinc-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className={cn('p-4 rounded-2xl transition-transform group-hover:scale-110', stat.bg)}>
                                         <stat.icon className={stat.color} size={28} />
                                     </div>
                                     <div className="flex flex-col items-end">
-                                        <span className="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded-full mb-1">{stat.change}</span>
+                                        <span className="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded-full mb-1">{stat.badge}</span>
                                         <span className="text-xl">{stat.emoji}</span>
                                     </div>
                                 </div>
@@ -225,22 +230,7 @@ export const DashboardView: React.FC = () => {
                         ))}
                     </div>
 
-                    {/* Role-specific quick-nav cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {profile.role === 'freelancer' ? (
-                            <>
-                                <StatCard label="Ongoing Jobs"   value={stats.stat1} icon={Briefcase}    color="text-brand-600"   bg="bg-brand-50"   onClick={() => navigate('/dashboard/summary/ongoing')} />
-                                <StatCard label="Pending Apps"   value={stats.stat2} icon={Clock}        color="text-indigo-600" bg="bg-indigo-50"  onClick={() => navigate('/dashboard/summary/pending')} />
-                                <StatCard label="Completed Jobs" value={stats.stat3} icon={CheckCircle}  color="text-emerald-600" bg="bg-emerald-50" onClick={() => navigate('/dashboard/summary/completed')} />
-                            </>
-                        ) : (
-                            <>
-                                <StatCard label="Jobs Posted"    value={stats.stat1} icon={FileText}  color="text-brand-600"   bg="bg-brand-50"  onClick={() => navigate('/jobmarket', { state: { tab: 'my-jobs' } })} />
-                                <StatCard label="Ongoing Jobs"   value={stats.stat2} icon={Briefcase} color="text-indigo-600" bg="bg-indigo-50" onClick={() => navigate('/dashboard/summary/ongoing')} />
-                                <StatCard label="Apps to Review" value={stats.stat3} icon={User}      color="text-amber-600"  bg="bg-amber-50"  onClick={() => navigate('/dashboard/summary/review')} />
-                            </>
-                        )}
-                    </div>
+
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         <div className="bg-white rounded-[2rem] border border-zinc-200 shadow-sm overflow-hidden flex flex-col">

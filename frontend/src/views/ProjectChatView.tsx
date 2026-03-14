@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, Loader2, MessageSquare, FileText, CheckCircle2, Paperclip, X, Plus, ShieldCheck, Coins, UploadCloud, UserCircle, Bot, Calendar, Clock, AlertCircle, Bell, Timer } from 'lucide-react';
+import { Send, Loader2, MessageSquare, FileText, CheckCircle2, Paperclip, X, Plus, ShieldCheck, UploadCloud, UserCircle, Bot, Calendar, Clock, AlertCircle, Bell, Timer } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useWallet } from '../lib/WalletContext';
 import { ethers } from 'ethers';
 
-import { ESCROW_ABI, ESCROW_BYTECODE } from '../lib/escrowContract';
+import { ESCROW_ABI } from '../lib/escrowContract';
 
 const ADMIN_WALLETS = [
     "0xbeE339Aa5d7af6758164F5739a2c98EB6f16a3AB",
@@ -16,16 +16,16 @@ const ADMIN_WALLETS = [
 interface Message { id: string; content: string; sender_address: string; receiver_address: string; created_at: string; room_id?: string; is_read?: boolean; }
 interface Notification { id: string; content: string; wallet_address: string; room_id: string; created_at: string; }
 
-interface ChatHistory { 
-    roomId: string; 
-    walletAddress: string; 
-    name: string; 
-    avatarUrl?: string; 
-    lastMessage: string; 
-    time: string; 
-    timestamp: number; 
-    jobTitle?: string; 
-    hasNotification?: boolean; 
+interface ChatHistory {
+    roomId: string;
+    walletAddress: string;
+    name: string;
+    avatarUrl?: string;
+    lastMessage: string;
+    time: string;
+    timestamp: number;
+    jobTitle?: string;
+    hasNotification?: boolean;
 }
 
 interface Milestone {
@@ -45,10 +45,23 @@ interface Milestone {
 
 interface ProjectFile { id: string; file_name: string; file_size: string; file_url?: string; }
 
+const getFastFees = async (provider: ethers.BrowserProvider) => {
+    const feeData = await provider.getFeeData();
+    const fees: any = {};
+    if (feeData.maxFeePerGas) {
+        fees.maxFeePerGas = (feeData.maxFeePerGas * 13n) / 10n;
+    }
+    if (feeData.maxPriorityFeePerGas) {
+        fees.maxPriorityFeePerGas = (feeData.maxPriorityFeePerGas * 13n) / 10n;
+    }
+    return fees;
+};
+
 export const ProjectChatView: React.FC = () => {
     const { walletAddress } = useWallet();
     const location = useLocation();
     const navigate = useNavigate();
+
     const [messages, setMessages] = useState<Message[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [chatHistory, setChatHistory] = useState<ChatHistory[]>([]);
@@ -92,6 +105,7 @@ export const ProjectChatView: React.FC = () => {
 
     const [milestones, setMilestones] = useState<Milestone[]>([]);
     const [files, setFiles] = useState<ProjectFile[]>([]);
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const [now, setNow] = useState(Date.now());
@@ -116,6 +130,37 @@ export const ProjectChatView: React.FC = () => {
         setNotifications(prev => prev.filter(n => n.id !== id));
         await supabase.from('notifications').delete().eq('id', id);
     };
+
+    useEffect(() => {
+        const initNewChat = async () => {
+            const queryParams = new URLSearchParams(location.search);
+            const projectChatId = queryParams.get('project');
+            const newChatWallet = queryParams.get('newchat');
+
+            if (projectChatId && walletAddress) {
+                activeRoomIdRef.current = projectChatId;
+                setActiveRoomId(projectChatId);
+
+                const { data } = await supabase.from('jobs').select('employer_address').eq('id', projectChatId).single();
+                if (data) setActiveChatWallet(data.employer_address);
+
+                navigate('/chat', { replace: true });
+            }
+            else if (newChatWallet && walletAddress) {
+                const lowerWallet = walletAddress.toLowerCase();
+                const lowerNewChat = newChatWallet.toLowerCase();
+
+                if (lowerWallet !== lowerNewChat) {
+                    const rId = [lowerWallet, lowerNewChat].sort().join('_');
+                    activeRoomIdRef.current = rId;
+                    setActiveRoomId(rId);
+                    setActiveChatWallet(lowerNewChat);
+                    navigate('/chat', { replace: true });
+                }
+            }
+        };
+        initNewChat();
+    }, [location.search, walletAddress, navigate]);
 
     useEffect(() => {
         const identifyRole = async () => {
@@ -167,8 +212,15 @@ export const ProjectChatView: React.FC = () => {
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
 
+            const fastFees = await getFastFees(provider);
+
             const stakeAmount = await contract.freelancerStake();
-            const tx = await contract.stakeFreelancer({ value: stakeAmount, gasLimit: 300000 });
+
+            const tx = await contract.stakeFreelancer({
+                value: stakeAmount,
+                gasLimit: 300000,
+                ...fastFees
+            });
             await tx.wait(1);
 
             setHasFreelancerStaked(true);
@@ -192,7 +244,9 @@ export const ProjectChatView: React.FC = () => {
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
 
-            const tx = await contract.claimRefund();
+            const fastFees = await getFastFees(provider);
+
+            const tx = await contract.claimRefund({ ...fastFees });
             await tx.wait(1);
 
             const roomId = getRoomId();
@@ -320,7 +374,9 @@ export const ProjectChatView: React.FC = () => {
                 const provider = new ethers.BrowserProvider(window.ethereum);
                 const signer = await provider.getSigner();
                 const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
-                const tx = await contract.approveMilestone();
+
+                const fastFees = await getFastFees(provider);
+                const tx = await contract.approveMilestone({ ...fastFees });
                 await tx.wait(1);
             }
 
@@ -340,7 +396,7 @@ export const ProjectChatView: React.FC = () => {
 
     const handleStartAppeal = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!activeMilestone) return;
+        if (!activeMilestone || !walletAddress) return;
         if (!appealReason || appealReason.trim() === "") {
             alert("Please provide a reason for your appeal.");
             return;
@@ -351,6 +407,17 @@ export const ProjectChatView: React.FC = () => {
             const appealTime = new Date().toISOString();
 
             await supabase.from('project_milestones').update({ status: 'appealed', appeal_start_time: appealTime }).eq('id', activeMilestone.id);
+
+            await supabase.from('appeals').insert([{
+                milestone_id: activeMilestone.id,
+                project_id: getRoomId(),
+                freelancer_address: walletAddress.toLowerCase(),
+                ai_status: activeMilestone.ai_verdict || 'PENDING',
+                ai_reasoning: aiVerdict?.reasoning || 'No AI reasoning explicitly cached.',
+                freelancer_reason: appealReason,
+                status: 'pending'
+            }]);
+
             setMilestones(prev => prev.map(m => m.id === activeMilestone.id ? { ...m, status: 'appealed', appeal_start_time: appealTime } : m));
 
             // Insert into appeals table
@@ -372,20 +439,12 @@ export const ProjectChatView: React.FC = () => {
                 }
             ];
 
-            ADMIN_WALLETS.forEach(adminWallet => {
-                notificationsPayload.push({
-                    room_id: getRoomId(),
-                    wallet_address: adminWallet.toLowerCase(),
-                    content: `[ADMIN ALERT] Appeal initiated for '${activeMilestone.title}'. Reason: "${appealReason}". Admin chat access has been granted.`
-                });
-            });
-
             await supabase.from('notifications').insert(notificationsPayload);
 
             setIsAppealModalOpen(false);
             setAppealReason('');
             setIsReviewMilestoneOpen(false);
-            alert("Appeal sent as a notification. The employer has 24 hours to review.");
+            alert("Appeal sent to Admin queue. The employer also has 24 hours to review.");
         } catch (error: any) { alert(`Appeal Failed: ${error.message}`); } finally { setIsProcessingMilestone(false); }
     };
 
@@ -395,93 +454,96 @@ export const ProjectChatView: React.FC = () => {
         setIsProcessingMilestone(true);
         try {
             await supabase.from('project_milestones').update({ status: 'escalated' }).eq('id', activeMilestone.id);
+            await supabase.from('appeals').update({ status: 'escalated' }).eq('milestone_id', activeMilestone.id);
+
             setMilestones(prev => prev.map(m => m.id === activeMilestone.id ? { ...m, status: 'escalated' } : m));
             setIsReviewMilestoneOpen(false);
 
-            const notificationsPayload = [];
-            ADMIN_WALLETS.forEach(adminWallet => {
-                notificationsPayload.push({
-                    room_id: getRoomId(),
-                    wallet_address: adminWallet.toLowerCase(),
-                    content: `[URGENT ACTION REQUIRED] The employer manually escalated the dispute for milestone '${activeMilestone.title}'. Final Admin resolution is needed.`
-                });
-            });
-
-            await supabase.from('notifications').insert(notificationsPayload);
-
-            alert("Dispute escalated to Admin.");
+            alert("Dispute fully escalated to Admin.");
         } catch (error: any) { alert(`Escalation Failed: ${error.message}`); } finally { setIsProcessingMilestone(false); }
     };
 
     const handleAdminOverrideApprove = async () => {
         if (!activeMilestone || !window.ethereum || !deployedContractAddress) return;
-        if (!window.confirm("ADMIN: Override and force-approve this milestone? This will also complete and close the project.")) return;
+        if (!window.confirm("ADMIN: Override and force-approve this milestone?")) return;
         setIsProcessingMilestone(true);
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
-            const tx = await contract.approveMilestone();
+
+            const fastFees = await getFastFees(provider);
+            const tx = await contract.approveMilestone({ ...fastFees });
             await tx.wait(1);
 
             await supabase.from('project_milestones').update({ status: 'approved' }).eq('id', activeMilestone.id);
-            setMilestones(prev => prev.map(m => m.id === activeMilestone.id ? { ...m, status: 'approved' } : m));
+            await supabase.from('appeals').update({ status: 'resolved', admin_feedback: 'Admin approved milestone and released funds to freelancer.' }).eq('milestone_id', activeMilestone.id);
+
+            const updatedMilestones = milestones.map(m => m.id === activeMilestone.id ? { ...m, status: 'approved' } : m);
+            setMilestones(updatedMilestones as Milestone[]);
 
             const roomId = getRoomId();
-
-            await supabase.from('jobs').update({ status: 'completed' }).eq('id', roomId);
-            await supabase.from('applications').update({ status: 'completed' }).eq('job_id', roomId).eq('status', 'accepted');
-
-            await supabase.from('messages').insert([{
-                content: `[System] Project Completed by Admin`,
-                sender_address: walletAddress!.toLowerCase(),
-                receiver_address: activeChatWallet.toLowerCase(),
-                room_id: roomId,
-                is_read: false
-            }]);
-
             const { data: jobData } = await supabase.from('jobs').select('employer_address').eq('id', roomId).single();
-            const { data: appData } = await supabase.from('applications').select('freelancer_address').eq('job_id', roomId).eq('status', 'completed').single();
+            const { data: appData } = await supabase.from('applications').select('freelancer_address').eq('job_id', roomId).eq('status', 'accepted').single();
 
-            if (jobData && appData) {
-                await supabase.from('notifications').insert([
-                    { room_id: roomId, wallet_address: jobData.employer_address, content: `[ADMIN ACTION] Milestone approved. This project and chat have been forcefully closed by the Administrator.` },
-                    { room_id: roomId, wallet_address: appData.freelancer_address, content: `[ADMIN ACTION] Milestone approved. This project and chat have been forcefully closed by the Administrator.` }
-                ]);
+            const isAllApproved = updatedMilestones.every(m => m.status === 'approved');
+
+            if (isAllApproved) {
+                await supabase.from('jobs').update({ status: 'completed' }).eq('id', roomId);
+                await supabase.from('applications').update({ status: 'completed' }).eq('job_id', roomId).eq('status', 'accepted');
+
+                await supabase.from('messages').insert([{
+                    content: `[System] Project Completed by Admin. All milestones resolved.`,
+                    sender_address: walletAddress!.toLowerCase(),
+                    receiver_address: activeChatWallet.toLowerCase(),
+                    room_id: roomId,
+                    is_read: false
+                }]);
+
+                if (jobData && appData) {
+                    await supabase.from('notifications').insert([
+                        { room_id: roomId, wallet_address: jobData.employer_address, content: `[ADMIN ACTION] Final milestone approved. The project is officially closed.` },
+                        { room_id: roomId, wallet_address: appData.freelancer_address, content: `[ADMIN ACTION] Final milestone approved. The project is officially closed.` }
+                    ]);
+                }
+
+                alert("Admin Override: Final milestone approved. Project successfully completed and closed.");
+            } else {
+                if (jobData && appData) {
+                    await supabase.from('notifications').insert([
+                        { room_id: roomId, wallet_address: jobData.employer_address, content: `[ADMIN ACTION] Milestone '${activeMilestone.title}' was forcefully approved and funds released. You may proceed.` },
+                        { room_id: roomId, wallet_address: appData.freelancer_address, content: `[ADMIN ACTION] Milestone '${activeMilestone.title}' was forcefully approved and funds released. You may proceed.` }
+                    ]);
+                }
+                alert("Admin Override: Milestone approved. Project remains open for the remaining milestones.");
             }
 
-            setIsProjectCompleted(true);
             setIsReviewMilestoneOpen(false);
             setActiveMilestone(null);
+            navigate('/admin');
 
-            setChatHistory(prev => {
-                const updated = prev.filter(c => c.roomId !== roomId);
-                if (updated.length > 0) {
-                    setActiveRoomId(updated[0].roomId);
-                    setActiveChatWallet(updated[0].walletAddress);
-                } else { setActiveRoomId(''); setActiveChatWallet(''); }
-                return updated;
-            });
-
-            alert("Admin Override: Milestone approved, funds released, and project closed.");
         } catch (error: any) { alert(`Admin Override Failed: ${error.message}`); } finally { setIsProcessingMilestone(false); }
     };
 
     const handleAdminOverrideRefund = async () => {
         if (!window.ethereum || !deployedContractAddress) return;
-        if (!window.confirm("ADMIN: Override and force-refund the employer? This cancels the contract.")) return;
+        if (!window.confirm("ADMIN: Override and force-refund the employer? This permanently cancels the entire contract.")) return;
         setIsProcessingMilestone(true);
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(deployedContractAddress, ESCROW_ABI, signer);
-            const tx = await contract.adminOverrideRefund();
+
+            const fastFees = await getFastFees(provider);
+            const tx = await contract.adminOverrideRefund({ ...fastFees });
             await tx.wait(1);
 
             const roomId = getRoomId();
 
             await supabase.from('jobs').update({ status: 'cancelled' }).eq('id', roomId);
             await supabase.from('applications').update({ status: 'cancelled' }).eq('job_id', roomId).eq('status', 'accepted');
+
+            await supabase.from('appeals').update({ status: 'resolved', admin_feedback: 'Admin executed a total refund to employer. Contract cancelled.' }).eq('project_id', roomId);
 
             await supabase.from('messages').insert([{
                 content: `[System] Contract Cancelled by Admin`,
@@ -506,15 +568,7 @@ export const ProjectChatView: React.FC = () => {
             setActiveMilestone(null);
 
             alert("Admin Override: Contract cancelled and funds refunded to employer.");
-
-            setChatHistory(prev => {
-                const updated = prev.filter(c => c.roomId !== roomId);
-                if (updated.length > 0) {
-                    setActiveRoomId(updated[0].roomId);
-                    setActiveChatWallet(updated[0].walletAddress);
-                } else { setActiveRoomId(''); setActiveChatWallet(''); }
-                return updated;
-            });
+            navigate('/admin');
 
         } catch (error: any) { alert(`Admin Refund Failed: ${error.message}`); } finally { setIsProcessingMilestone(false); }
     };
@@ -550,23 +604,24 @@ export const ProjectChatView: React.FC = () => {
                         { room_id: roomId, wallet_address: appData.freelancer_address, content: `[ADMIN ACTION] This project and chat have been forcefully closed by the Administrator.` }
                     ]);
                 }
+                navigate('/admin');
             } else {
                 await supabase.from('notifications').insert([{
                     room_id: roomId,
                     wallet_address: activeChatWallet.toLowerCase(),
                     content: `Project completed. Thank you for your hard work. The employer has officially closed this contract.`
                 }]);
-            }
 
-            setIsProjectCompleted(true);
-            setChatHistory(prev => {
-                const updated = prev.filter(c => c.roomId !== roomId);
-                if (updated.length > 0) {
-                    setActiveRoomId(updated[0].roomId);
-                    setActiveChatWallet(updated[0].walletAddress);
-                } else { setActiveRoomId(''); setActiveChatWallet(''); }
-                return updated;
-            });
+                setIsProjectCompleted(true);
+                setChatHistory(prev => {
+                    const updated = prev.filter(c => c.roomId !== roomId);
+                    if (updated.length > 0) {
+                        setActiveRoomId(updated[0].roomId);
+                        setActiveChatWallet(updated[0].walletAddress);
+                    } else { setActiveRoomId(''); setActiveChatWallet(''); }
+                    return updated;
+                });
+            }
 
         } catch (error) { alert("Failed to complete project."); } finally { setIsProcessingMilestone(false); }
     };
@@ -593,7 +648,6 @@ export const ProjectChatView: React.FC = () => {
         } catch (error) { console.error(error); } finally { setIsUploading(false); }
     };
 
-    // HISTORY FETCH & INTERNAL SIDEBAR SCANNER
     useEffect(() => {
         if (!walletAddress) return;
         const lowerWallet = walletAddress.toLowerCase();
@@ -621,32 +675,29 @@ export const ProjectChatView: React.FC = () => {
 
             let allMessages: Message[] = [];
             
-            const { data: directMsgs } = await supabase
-                .from('messages')
-                .select('*')
-                .or(`sender_address.eq.${lowerWallet},receiver_address.eq.${lowerWallet}`)
-                .order('created_at', { ascending: false });
-            
-            if (directMsgs) allMessages.push(...directMsgs);
-
             if (isAdminUser) {
-                const { data: appealedMilestones } = await supabase
-                    .from('project_milestones')
-                    .select('project_id')
-                    .in('status', ['appealed', 'escalated']);
+                const targetRoom = activeRoomIdRef.current;
+                let queryStr = `sender_address.eq.${lowerWallet},receiver_address.eq.${lowerWallet}`;
 
-                if (appealedMilestones && appealedMilestones.length > 0) {
-                    const appealedProjectIds = Array.from(new Set(appealedMilestones.map(m => m.project_id)));
-                    appealedProjectIds.forEach(id => roomsWithUnread.add(id));
-                    
-                    const { data: appealedMsgs } = await supabase
-                        .from('messages')
-                        .select('*')
-                        .in('room_id', appealedProjectIds)
-                        .order('created_at', { ascending: false });
-                        
-                    if (appealedMsgs) allMessages.push(...appealedMsgs);
+                if (targetRoom) {
+                    queryStr += `,room_id.eq.${targetRoom}`;
                 }
+
+                const { data: adminMsgs } = await supabase
+                    .from('messages')
+                    .select('*')
+                    .or(queryStr)
+                    .order('created_at', { ascending: false });
+                
+                if (adminMsgs) allMessages.push(...adminMsgs);
+            } else {
+                const { data: userMsgs } = await supabase
+                    .from('messages')
+                    .select('*')
+                    .or(`sender_address.eq.${lowerWallet},receiver_address.eq.${lowerWallet}`)
+                    .order('created_at', { ascending: false });
+                
+                if (userMsgs) allMessages.push(...userMsgs);
             }
 
             const uniqueMsgsObj: { [key: string]: Message } = {};
@@ -731,7 +782,6 @@ export const ProjectChatView: React.FC = () => {
 
         fetchHistory();
 
-        // Use polling to guarantee sidebar dots update even if realtime drops
         const intervalId = setInterval(fetchHistory, 3000);
 
         const sidebarChannel = supabase.channel('internal_sidebar_sync')
@@ -744,67 +794,8 @@ export const ProjectChatView: React.FC = () => {
             clearInterval(intervalId);
             supabase.removeChannel(sidebarChannel);
         };
-    }, [walletAddress, activeRoomId]);
+    }, [walletAddress, activeRoomId, location.search]);
 
-    // Handle new chat initiation from URL parameter (Admin panel -> Mail button)
-    useEffect(() => {
-        const initNewChat = async () => {
-            const queryParams = new URLSearchParams(location.search);
-            const newChatWallet = queryParams.get('newchat');
-            
-            if (newChatWallet && walletAddress) {
-                const lowerWallet = walletAddress.toLowerCase();
-                const lowerNewChat = newChatWallet.toLowerCase();
-                
-                if (lowerWallet !== lowerNewChat) {
-                    const rId = [lowerWallet, lowerNewChat].sort().join('_');
-                    
-                    activeRoomIdRef.current = rId;
-                    setActiveRoomId(rId);
-                    setActiveChatWallet(lowerNewChat);
-                    
-                    // Clear the query parameter so refreshing doesn't trigger it again
-                    navigate('/chat', { replace: true });
-
-                    // Formalize in DB so global fetches pick it up
-                    try {
-                        const { data } = await supabase.from('messages').select('id').eq('room_id', rId).limit(1);
-                        if (!data || data.length === 0) {
-                            await supabase.from('messages').insert([{
-                                content: `[System] Direct message conversation started.`,
-                                sender_address: lowerWallet,
-                                receiver_address: lowerNewChat,
-                                room_id: rId
-                            }]);
-                        }
-                    } catch (e) {
-                         console.error("Failed to formalize new chat:", e);
-                    }
-
-                    // Ensure it appears in the sidebar history immediately
-                    setChatHistory(prev => {
-                        const exists = prev.some(c => c.roomId === rId);
-                        if (!exists) {
-                            return [{
-                                roomId: rId,
-                                walletAddress: lowerNewChat,
-                                name: formatAddress(lowerNewChat),
-                                lastMessage: 'Started Direct Message',
-                                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                timestamp: Date.now(),
-                                jobTitle: "Direct Message",
-                                hasNotification: false
-                            }, ...prev];
-                        }
-                        return prev;
-                    });
-                }
-            }
-        };
-        initNewChat();
-    }, [location.search, walletAddress, navigate]);
-
-    // LOAD ACTIVE CHAT & AUTO-MARK AS READ
     useEffect(() => {
         if (!walletAddress || !activeRoomId || !activeChatWallet) return;
         const roomId = activeRoomId;
@@ -814,9 +805,14 @@ export const ProjectChatView: React.FC = () => {
         const fetchData = async () => {
             setIsLoading(true);
 
+            setDeployedContractAddress(null);
+            setIsProjectCompleted(false);
+            setIsContractCancelled(false);
+            setMilestones([]);
+            setFiles([]);
+
             const isAdminUser = ADMIN_WALLETS.map(w => w.toLowerCase()).includes(lowerWallet);
 
-            // INSTANT READ FIX: Mark all arriving messages in this room as read immediately
             if (!isAdminUser) {
                 await supabase.from('messages')
                     .update({ is_read: true })
@@ -854,7 +850,7 @@ export const ProjectChatView: React.FC = () => {
                 if (completedMsg) {
                     if (completedMsg.content.includes("Completed")) setIsProjectCompleted(true);
                     if (completedMsg.content.includes("Cancelled")) setIsContractCancelled(true);
-                } else { setIsProjectCompleted(false); setIsContractCancelled(false); }
+                }
             }
 
             if (filRes.data) setFiles(filRes.data);
@@ -866,7 +862,6 @@ export const ProjectChatView: React.FC = () => {
 
         fetchData();
 
-        // This causes the component to re-run fetchData (and the read-receipt update) when a new message arrives while watching the chat.
         const channelMsg = supabase.channel(`room_msg:${roomId}`).on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchData).subscribe();
         const channelMil = supabase.channel(`room_mil:${roomId}`).on('postgres_changes', { event: '*', schema: 'public', table: 'project_milestones' }, fetchData).subscribe();
         const channelNot = supabase.channel(`room_not:${roomId}`).on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, fetchData).subscribe();
@@ -950,7 +945,7 @@ export const ProjectChatView: React.FC = () => {
                             {activeMilestone.file_url && (
                                 <a href={activeMilestone.file_url} target="_blank" rel="noopener noreferrer" className="w-full py-4 bg-zinc-100 text-zinc-900 rounded-xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all border border-zinc-200"><FileText size={16} /> Open Submitted File</a>
                             )}
-                            
+
                             {userRole === 'employer' && activeMilestone.status === 'submitted' && (
                                 <div className="border-t border-zinc-100 pt-6">
                                     <h4 className="text-sm font-black text-zinc-900 mb-3 flex items-center gap-2"><Bot size={18} className="text-brand-600" /> AI Agent Guide</h4>
@@ -1045,9 +1040,9 @@ export const ProjectChatView: React.FC = () => {
                             const initials = chat.name.slice(0, 2).toUpperCase();
                             return (
                                 <button key={chat.roomId} onClick={() => { setActiveRoomId(chat.roomId); setActiveChatWallet(chat.walletAddress); }}
-                                    className={`w-full px-4 py-3.5 text-left flex items-center gap-3 transition-all relative ${
-                                        isActive ? 'bg-brand-50 border-l-[3px] border-l-brand-500' : 'border-l-[3px] border-l-transparent hover:bg-zinc-50'
-                                    }`}>
+                                        className={`w-full px-4 py-3.5 text-left flex items-center gap-3 transition-all relative ${
+                                            isActive ? 'bg-brand-50 border-l-[3px] border-l-brand-500' : 'border-l-[3px] border-l-transparent hover:bg-zinc-50'
+                                        }`}>
                                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-black flex-shrink-0 overflow-hidden shadow-inner border border-zinc-200/50 ${
                                         isActive ? 'bg-brand-600 text-white border-brand-500' : 'bg-zinc-100 text-zinc-500'
                                     }`}>
@@ -1090,7 +1085,7 @@ export const ProjectChatView: React.FC = () => {
                                     {activeChatDetails?.avatarUrl ? (
                                         <img src={activeChatDetails.avatarUrl} alt="avatar" className="w-full h-full object-cover" />
                                     ) : (
-                                         activeChatName.slice(0,2).toUpperCase()
+                                        activeChatName.slice(0,2).toUpperCase()
                                     )}
                                 </div>
                                 <div>

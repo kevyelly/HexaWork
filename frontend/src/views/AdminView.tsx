@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Users, Search, Mail, ExternalLink, ShieldCheck, Loader2, LineChart, Briefcase, Coins, BarChart3, TrendingUp, Scale, MessageSquareQuote, AlertTriangle, Bot } from 'lucide-react';
+import { Users, Search, Mail, ExternalLink, ShieldCheck, Loader2, Briefcase, Coins, BarChart3, TrendingUp, Scale, AlertTriangle, Bot, MessageSquare } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { cn } from '../utils';
-
 import { useNavigate } from 'react-router-dom';
 
 interface UserProfile {
@@ -37,7 +36,7 @@ export const AdminView: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'disputes' | 'settings'>('users');
-    
+
     // Analytics state
     const [stats, setStats] = useState({
         totalUsers: 0,
@@ -47,19 +46,18 @@ export const AdminView: React.FC = () => {
         totalVolume: 0
     });
     const [isLoadingStats, setIsLoadingStats] = useState(false);
-    
+
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
     const [totalUsers, setTotalUsers] = useState(0);
     const PAGE_SIZE = 10;
-    
+
     // Modal state
     const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
     // Appeals state
     const [appeals, setAppeals] = useState<Appeal[]>([]);
     const [isFetchingAppeals, setIsFetchingAppeals] = useState(false);
-    const [isResolving, setIsResolving] = useState<string | null>(null);
 
     // Debounce search
     useEffect(() => {
@@ -77,7 +75,7 @@ export const AdminView: React.FC = () => {
                 let query = supabase
                     .from('users')
                     .select('*', { count: 'exact' });
-                
+
                 if (debouncedSearch) {
                     query = query.or(`full_name.ilike.%${debouncedSearch}%,wallet_address.ilike.%${debouncedSearch}%,title.ilike.%${debouncedSearch}%`);
                 }
@@ -87,7 +85,7 @@ export const AdminView: React.FC = () => {
 
                 const { data, error, count } = await query
                     .range(from, to);
-                
+
                 if (error) throw error;
                 if (data) setUsers(data);
                 if (count !== null) setTotalUsers(count);
@@ -104,7 +102,7 @@ export const AdminView: React.FC = () => {
     // Fetch Analytics Stats
     useEffect(() => {
         if (activeTab !== 'analytics') return;
-        
+
         const fetchStats = async () => {
             setIsLoadingStats(true);
             try {
@@ -141,20 +139,27 @@ export const AdminView: React.FC = () => {
         fetchStats();
     }, [activeTab]);
 
-    // Fetch Appeals
+    // STRICT APPEALS FETCH & REALTIME LISTENER
     useEffect(() => {
         if (activeTab !== 'disputes') return;
 
-        const fetchAppeals = async () => {
+        const fetchLiveAppeals = async () => {
             setIsFetchingAppeals(true);
             try {
+                // STRICT FILTER: Only load active disputes from your actual DB schema
                 const { data, error } = await supabase
                     .from('appeals')
                     .select('*')
+                    .in('status', ['pending', 'escalated']) // Hides resolved or old test data
                     .order('created_at', { ascending: false });
-                
-                if (error) throw error;
-                if (data) setAppeals(data);
+
+                if (error) {
+                    console.error("Supabase Appeals Error:", error);
+                    throw error;
+                }
+
+                console.log("Live Appeals from DB:", data); // Check your browser console!
+                setAppeals(data || []);
             } catch (error) {
                 console.error("Error fetching appeals:", error);
             } finally {
@@ -162,41 +167,19 @@ export const AdminView: React.FC = () => {
             }
         };
 
-        fetchAppeals();
+        fetchLiveAppeals();
+
+        // Realtime Listener: Instantly updates UI if a new dispute is inserted into the DB
+        const appealsSubscription = supabase.channel('admin_appeals_channel')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appeals' }, () => {
+                fetchLiveAppeals();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(appealsSubscription);
+        };
     }, [activeTab]);
-
-    const handleResolveAppeal = async (appealId: string, milestoneId: string, status: 'approved' | 'rejected', feedback: string) => {
-        setIsResolving(appealId);
-        try {
-            // 1. Update project_milestones table
-            const { error: msError } = await supabase
-                .from('project_milestones')
-                .update({ status })
-                .eq('id', milestoneId);
-            
-            if (msError) throw msError;
-
-            // 2. Update appeals table
-            const { error: appealError } = await supabase
-                .from('appeals')
-                .update({ 
-                    status: 'resolved',
-                    admin_feedback: feedback
-                })
-                .eq('id', appealId);
-            
-            if (appealError) throw appealError;
-
-            // 3. Update local state
-            setAppeals(prev => prev.map(a => a.id === appealId ? { ...a, status: 'resolved', admin_feedback: feedback } : a));
-            alert(`Resolution submitted: Milestone set to ${status}.`);
-        } catch (error: any) {
-            console.error("Resolution error:", error);
-            alert("Failed to resolve appeal: " + error.message);
-        } finally {
-            setIsResolving(null);
-        }
-    };
 
     return (
         <div className="p-4 md:p-6 space-y-8 animate-in fade-in duration-500">
@@ -220,11 +203,11 @@ export const AdminView: React.FC = () => {
                 )}
             </div>
 
-            <div className="flex border-b border-zinc-200 gap-8">
+            <div className="flex border-b border-zinc-200 gap-8 overflow-x-auto">
                 <button
                     onClick={() => setActiveTab('users')}
                     className={cn(
-                        "pb-4 text-sm font-bold transition-all border-b-2 relative",
+                        "pb-4 text-sm font-bold transition-all border-b-2 relative whitespace-nowrap",
                         activeTab === 'users' ? "border-brand-600 text-brand-600" : "border-transparent text-zinc-400 hover:text-zinc-600"
                     )}
                 >
@@ -233,7 +216,7 @@ export const AdminView: React.FC = () => {
                 <button
                     onClick={() => setActiveTab('analytics')}
                     className={cn(
-                        "pb-4 text-sm font-bold transition-all border-b-2 relative",
+                        "pb-4 text-sm font-bold transition-all border-b-2 relative whitespace-nowrap",
                         activeTab === 'analytics' ? "border-brand-600 text-brand-600" : "border-transparent text-zinc-400 hover:text-zinc-600"
                     )}
                 >
@@ -242,7 +225,7 @@ export const AdminView: React.FC = () => {
                 <button
                     onClick={() => setActiveTab('disputes')}
                     className={cn(
-                        "pb-4 text-sm font-bold transition-all border-b-2 relative",
+                        "pb-4 text-sm font-bold transition-all border-b-2 relative whitespace-nowrap",
                         activeTab === 'disputes' ? "border-brand-600 text-brand-600" : "border-transparent text-zinc-400 hover:text-zinc-600"
                     )}
                 >
@@ -251,7 +234,7 @@ export const AdminView: React.FC = () => {
                 <button
                     onClick={() => setActiveTab('settings')}
                     className={cn(
-                        "pb-4 text-sm font-bold transition-all border-b-2 relative",
+                        "pb-4 text-sm font-bold transition-all border-b-2 relative whitespace-nowrap",
                         activeTab === 'settings' ? "border-brand-600 text-brand-600" : "border-transparent text-zinc-400 hover:text-zinc-600"
                     )}
                 >
@@ -268,7 +251,7 @@ export const AdminView: React.FC = () => {
                         </div>
                         <div className="relative w-full md:w-80">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                            <input 
+                            <input
                                 type="text"
                                 placeholder="Search by name, wallet, or title..."
                                 value={searchQuery}
@@ -294,85 +277,85 @@ export const AdminView: React.FC = () => {
                         ) : (
                             <table className="w-full text-left border-collapse">
                                 <thead>
-                                    <tr className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 bg-zinc-50/30">
-                                        <th className="px-8 py-5">User</th>
-                                        <th className="px-8 py-5">Wallet Address</th>
-                                        <th className="px-8 py-5">Role/Status</th>
-                                        <th className="px-8 py-5 text-right">Actions</th>
-                                    </tr>
+                                <tr className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 bg-zinc-50/30">
+                                    <th className="px-8 py-5">User</th>
+                                    <th className="px-8 py-5">Wallet Address</th>
+                                    <th className="px-8 py-5">Role/Status</th>
+                                    <th className="px-8 py-5 text-right">Actions</th>
+                                </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-50">
-                                    {users.map((user) => (
-                                        <tr key={user.wallet_address} className="hover:bg-zinc-50/50 transition-colors group">
-                                            <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedUser(user)}>
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-12 h-12 rounded-xl bg-brand-100 flex items-center justify-center text-brand-600 font-black text-lg shadow-inner overflow-hidden flex-shrink-0">
-                                                        {user.avatar_url ? (
-                                                            <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            user.full_name?.charAt(0).toUpperCase() || '?'
-                                                        )}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-black text-zinc-900 leading-tight group-hover:text-brand-600 transition-colors">{user.full_name || 'Anonymous User'}</p>
-                                                        <p className="text-xs font-bold text-zinc-400 mt-0.5">{user.title || 'Platform Member'}</p>
-                                                    </div>
+                                {users.map((user) => (
+                                    <tr key={user.wallet_address} className="hover:bg-zinc-50/50 transition-colors group">
+                                        <td className="px-8 py-6 cursor-pointer" onClick={() => setSelectedUser(user)}>
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 rounded-xl bg-brand-100 flex items-center justify-center text-brand-600 font-black text-lg shadow-inner overflow-hidden flex-shrink-0">
+                                                    {user.avatar_url ? (
+                                                        <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        user.full_name?.charAt(0).toUpperCase() || '?'
+                                                    )}
                                                 </div>
-                                            </td>
-                                            <td className="px-8 py-6">
-                                                <div className="flex items-center gap-2 font-mono text-xs font-bold text-zinc-500 bg-white px-3 py-2 rounded-lg border border-zinc-100 w-fit group-hover:border-brand-200 transition-colors">
-                                                    {user.wallet_address.slice(0, 10)}...{user.wallet_address.slice(-8)}
+                                                <div>
+                                                    <p className="font-black text-zinc-900 leading-tight group-hover:text-brand-600 transition-colors">{user.full_name || 'Anonymous User'}</p>
+                                                    <p className="text-xs font-bold text-zinc-400 mt-0.5">{user.title || 'Platform Member'}</p>
                                                 </div>
-                                            </td>
-                                            <td className="px-8 py-6">
+                                            </div>
+                                        </td>
+                                        <td className="px-8 py-6">
+                                            <div className="flex items-center gap-2 font-mono text-xs font-bold text-zinc-500 bg-white px-3 py-2 rounded-lg border border-zinc-100 w-fit group-hover:border-brand-200 transition-colors">
+                                                {user.wallet_address.slice(0, 10)}...{user.wallet_address.slice(-8)}
+                                            </div>
+                                        </td>
+                                        <td className="px-8 py-6">
                                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase tracking-widest border border-emerald-100 shadow-sm">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                                                     Active
                                                 </span>
-                                            </td>
-                                            <td className="px-8 py-6 text-right">
-                                                <div className="flex justify-end gap-2">
-                                                    <button 
-                                                        onClick={() => setSelectedUser(user)}
-                                                        className="p-3 text-zinc-400 hover:text-brand-600 hover:bg-white rounded-xl border border-transparent hover:border-zinc-200 transition-all shadow-none hover:shadow-sm"
-                                                        title="View Profile"
-                                                    >
-                                                        <ExternalLink size={18} />
-                                                    </button>
-                                                    <button 
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            navigate(`/chat?newchat=${user.wallet_address}`);
-                                                        }}
-                                                        className="p-3 text-zinc-400 hover:text-indigo-600 hover:bg-white rounded-xl border border-transparent hover:border-zinc-200 transition-all shadow-none hover:shadow-sm"
-                                                        title="Direct Message"
-                                                    >
-                                                        <Mail size={18} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                        </td>
+                                        <td className="px-8 py-6 text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    onClick={() => setSelectedUser(user)}
+                                                    className="p-3 text-zinc-400 hover:text-brand-600 hover:bg-white rounded-xl border border-transparent hover:border-zinc-200 transition-all shadow-none hover:shadow-sm"
+                                                    title="View Profile"
+                                                >
+                                                    <ExternalLink size={18} />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/chat?newchat=${user.wallet_address}`);
+                                                    }}
+                                                    className="p-3 text-zinc-400 hover:text-indigo-600 hover:bg-white rounded-xl border border-transparent hover:border-zinc-200 transition-all shadow-none hover:shadow-sm"
+                                                    title="Direct Message"
+                                                >
+                                                    <Mail size={18} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
                                 </tbody>
                             </table>
                         )}
                     </div>
-                    
+
                     <div className="p-6 border-t border-zinc-100 bg-zinc-50/30 flex justify-between items-center">
                         <p className="text-xs font-bold text-zinc-400">
                             Showing {users.length > 0 ? (currentPage - 1) * PAGE_SIZE + 1 : 0} to {Math.min(currentPage * PAGE_SIZE, totalUsers)} of {totalUsers} users
                         </p>
                         <div className="flex gap-2">
-                            <button 
+                            <button
                                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                disabled={currentPage === 1 || isLoading} 
+                                disabled={currentPage === 1 || isLoading}
                                 className="px-4 py-2 text-xs font-black text-zinc-600 border border-zinc-200 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-100 transition-colors"
                             >
                                 Previous
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setCurrentPage(p => p + 1)}
-                                disabled={currentPage * PAGE_SIZE >= totalUsers || isLoading} 
+                                disabled={currentPage * PAGE_SIZE >= totalUsers || isLoading}
                                 className="px-4 py-2 text-xs font-black text-zinc-600 border border-zinc-200 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-100 transition-colors"
                             >
                                 Next
@@ -403,7 +386,7 @@ export const AdminView: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {/* Total Users */}
                             <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-zinc-200 shadow-sm hover:shadow-md transition-shadow">
                                 <div className="flex justify-between items-start mb-6">
@@ -475,7 +458,7 @@ export const AdminView: React.FC = () => {
                                     <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-400">
                                         <ShieldCheck size={40} />
                                     </div>
-                                    <p className="text-zinc-500 font-bold">Victory! No pending appeals to moderate.</p>
+                                    <p className="text-zinc-500 font-bold">No pending appeals to moderate.</p>
                                 </div>
                             ) : (
                                 appeals.map(appeal => (
@@ -495,26 +478,30 @@ export const AdminView: React.FC = () => {
                                                     <AlertTriangle size={20} />
                                                 </div>
                                                 <div>
-                                                    <h3 className="font-black text-zinc-900">Appellate Review: Milestone #{appeal.milestone_id.slice(0,4)}</h3>
-                                                    <p className="text-xs font-bold text-zinc-500">Project ID: {appeal.project_id.slice(0,8)}</p>
+                                                    <h3 className="font-black text-zinc-900">
+                                                        Appellate Review: Milestone #{appeal.milestone_id ? appeal.milestone_id.slice(0,4) : 'N/A'}
+                                                    </h3>
+                                                    <p className="text-xs font-bold text-zinc-500">
+                                                        Project ID: {appeal.project_id ? appeal.project_id.slice(0,8) : 'N/A'}
+                                                    </p>
                                                 </div>
                                             </div>
                                             <span className={cn(
                                                 "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
-                                                appeal.status === 'resolved' 
-                                                    ? "bg-zinc-100 text-zinc-500 border-zinc-200" 
+                                                appeal.status === 'resolved'
+                                                    ? "bg-zinc-100 text-zinc-500 border-zinc-200"
                                                     : "bg-red-100 text-red-700 border-red-200"
                                             )}>
                                                 {appeal.status === 'resolved' ? 'Resolved' : 'Review Required'}
                                             </span>
                                         </div>
-                                        
+
                                         <div className="p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
                                             <div className="space-y-6">
                                                 <div>
                                                     <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">Freelancer Appeal Reasoning</h4>
                                                     <p className="text-sm text-zinc-700 bg-white p-4 rounded-2xl border border-zinc-100 italic">
-                                                        "{appeal.freelancer_reason}"
+                                                        "{appeal.freelancer_reason || "No reasoning provided."}"
                                                     </p>
                                                 </div>
 
@@ -523,14 +510,14 @@ export const AdminView: React.FC = () => {
                                                     <p className="text-xs font-mono font-bold text-zinc-600 truncate">{appeal.freelancer_address}</p>
                                                 </div>
                                             </div>
-                                            
+
                                             <div className="space-y-6">
                                                 <div className="bg-brand-50 p-6 rounded-3xl border border-brand-100">
                                                     <h4 className="text-[10px] font-black text-brand-600 uppercase tracking-widest mb-3 flex items-center gap-2">
                                                         <Bot size={14} className="LucideBot" /> AI Intelligence Report
                                                     </h4>
                                                     <p className="text-sm font-bold text-brand-900 mb-4">
-                                                        {appeal.ai_reasoning}
+                                                        {appeal.ai_reasoning || "AI Evaluation Pending or Unavailable."}
                                                     </p>
                                                     <div className="bg-white p-4 rounded-2xl border border-brand-200">
                                                         <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Initial AI Recommendation:</p>
@@ -539,23 +526,15 @@ export const AdminView: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        
+
+                                        {/* ROUTE DIRECTLY TO PROJECT CHAT FOR BLOCKCHAIN RESOLUTION */}
                                         {appeal.status !== 'resolved' && (
-                                            <div className="p-6 bg-zinc-50 border-t border-zinc-100 flex gap-4 justify-end">
-                                                <button 
-                                                    disabled={isResolving === appeal.id}
-                                                    onClick={() => handleResolveAppeal(appeal.id, appeal.milestone_id, 'approved', 'Admin override: Milestone verified as completed.')}
-                                                    className="px-6 py-3 font-black text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-all shadow-sm text-sm"
+                                            <div className="p-6 bg-zinc-50 border-t border-zinc-100 flex justify-end">
+                                                <button
+                                                    onClick={() => navigate(`/chat?project=${appeal.project_id}`)}
+                                                    className="px-6 py-3 font-black text-white bg-brand-600 hover:bg-brand-700 rounded-xl transition-all shadow-md shadow-brand-500/20 text-sm flex items-center gap-2"
                                                 >
-                                                    Override: Pay Freelancer
-                                                </button>
-                                                <button 
-                                                    disabled={isResolving === appeal.id}
-                                                    onClick={() => handleResolveAppeal(appeal.id, appeal.milestone_id, 'rejected', 'Admin enforced: AI verdict stands. Refund processed.')}
-                                                    className="px-6 py-3 font-black text-white bg-red-600 hover:bg-red-700 rounded-xl transition-all shadow-md shadow-red-500/20 text-sm flex items-center gap-2"
-                                                >
-                                                    {isResolving === appeal.id ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={16} />} 
-                                                    Enforce AI (Reject)
+                                                    <MessageSquare size={16} /> Enter Project Chat to Resolve
                                                 </button>
                                             </div>
                                         )}
@@ -577,10 +556,11 @@ export const AdminView: React.FC = () => {
                     <p className="text-zinc-500 font-bold">System Settings coming soon.</p>
                 </div>
             )}
+
             {/* User Details Modal */}
             {selectedUser && (
                 <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedUser(null)}>
-                    <motion.div 
+                    <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -641,17 +621,17 @@ export const AdminView: React.FC = () => {
 
                         {/* Actions */}
                         <div className="p-6 bg-zinc-50 border-t border-zinc-100 flex justify-end gap-3">
-                            <button 
-                                onClick={() => setSelectedUser(null)} 
+                            <button
+                                onClick={() => setSelectedUser(null)}
                                 className="px-6 py-3 font-bold text-zinc-500 hover:bg-zinc-200 bg-zinc-100 rounded-xl transition-colors text-sm"
                             >
                                 Close
                             </button>
-                            <button 
+                            <button
                                 onClick={() => {
                                     setSelectedUser(null);
                                     navigate(`/chat?newchat=${selectedUser.wallet_address}`);
-                                }} 
+                                }}
                                 className="px-6 py-3 font-black text-white bg-brand-600 hover:bg-brand-700 rounded-xl transition-all shadow-md shadow-brand-500/20 flex items-center gap-2 text-sm"
                             >
                                 <Mail size={16} /> Direct Message

@@ -981,7 +981,7 @@ export const MarketplaceView: React.FC = () => {
                             <div className="flex gap-3 pt-2">
                                 <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-4 bg-zinc-100 text-zinc-700 rounded-xl font-black uppercase text-sm hover:bg-zinc-200 transition-all">Cancel</button>
                                 <button type="submit" disabled={isProcessing} className="flex-1 py-4 bg-brand-600 text-white rounded-xl font-black uppercase text-sm shadow-xl shadow-brand-600/20 hover:bg-brand-700 transition-all disabled:opacity-60">
-                                    {isProcessing ? <Loader2 className="animate-spin mx-auto" size={20} /> : `Save Changes · ${editJob.milestones.reduce((sum, ms) => sum + Number(ms.amount || 0), 0)} PAS`}
+                                    {isProcessing ? <Loader2 className="animate-spin mx-auto" size={20} /> : `Save Changes`}
                                 </button>
                             </div>
                         </form>
@@ -989,7 +989,6 @@ export const MarketplaceView: React.FC = () => {
                 </div>
             )}
 
-            {/* ===== WITHDRAW APPLICATION MODAL ===== */}
             {isWithdrawConfirmOpen && appToWithdraw && (
                 <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl">

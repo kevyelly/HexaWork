@@ -3,12 +3,13 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import dns from 'dns';
+import path from 'path';
 
 //npx ts-node server.ts
 
 dns.setDefaultResultOrder('ipv4first');
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
 app.use(cors());

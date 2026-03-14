@@ -274,7 +274,10 @@ export const MarketplaceView: React.FC = () => {
                 headers: { 'Content-Type': 'application/json' }
             });
 
-            if (!response.ok) throw new Error("Failed to generate Zoom meeting link. Ensure your server.ts backend is running.");
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(`${errData.error}: ${errData.details || 'Unknown reason'}`);
+            }
 
             const data = await response.json();
             const meetingLink = data.join_url;
@@ -949,7 +952,12 @@ export const MarketplaceView: React.FC = () => {
                                                 <span className="text-xs font-black text-zinc-400 pl-1 w-4">{index + 1}.</span>
                                                 <input type="text" value={ms.title} onChange={e => { const u = [...newJob.milestones]; u[index].title = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
                                                 <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...newJob.milestones]; u[index].amount = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
-                                                <input type="number" value={ms.duration_days} onChange={e => { const u = [...newJob.milestones]; u[index].duration_days = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
+                                                <div className="flex flex-col">
+                                                    <input type="number" value={ms.duration_days} onChange={e => { const u = [...newJob.milestones]; u[index].duration_days = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
+                                                    {index > 0 && <span className="text-[9px] font-bold text-zinc-400 mt-1">Total: {
+                                                        newJob.milestones.slice(0, index + 1).reduce((sum, m) => sum + (parseInt(m.duration_days) || 0), 0)
+                                                    }d</span>}
+                                                </div>
                                                 {index > 0 && <button type="button" onClick={() => { const u = [...newJob.milestones]; u.splice(index, 1); setNewJob({...newJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg shrink-0"><Trash2 size={16} /></button>}
                                             </div>
                                             <div className="pl-7 pr-1">
@@ -1106,7 +1114,12 @@ export const MarketplaceView: React.FC = () => {
                                                 <span className="text-xs font-black text-zinc-400 pl-1 w-4">{index + 1}.</span>
                                                 <input type="text" value={ms.title} onChange={e => { const u = [...editJob.milestones]; u[index].title = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
                                                 <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...editJob.milestones]; u[index].amount = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
-                                                <input type="number" value={ms.duration_days} onChange={e => { const u = [...editJob.milestones]; u[index].duration_days = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
+                                                <div className="flex flex-col">
+                                                    <input type="number" value={ms.duration_days} onChange={e => { const u = [...editJob.milestones]; u[index].duration_days = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
+                                                    {index > 0 && <span className="text-[9px] font-bold text-zinc-400 mt-1">Total: {
+                                                        editJob.milestones.slice(0, index + 1).reduce((sum, m) => sum + (parseInt(m.duration_days) || 0), 0)
+                                                    }d</span>}
+                                                </div>
                                                 {index > 0 && <button type="button" onClick={() => { const u = [...editJob.milestones]; u.splice(index, 1); setEditJob({...editJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg shrink-0"><Trash2 size={16} /></button>}
                                             </div>
                                             <div className="pl-7 pr-1">

@@ -2,6 +2,11 @@
 .env*
 !.env.example
 
+# Node
+node_modules/
+dist/
+tsconfig.json
+
 # Python
 __pycache__/
 *.py[cod]

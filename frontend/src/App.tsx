@@ -30,10 +30,14 @@ import { ProjectChatView } from "./views/ProjectChatView";
 import { CalendarView } from "./views/CalendarView";
 import { ProfileView } from "./views/ProfileView";
 import { LandingPageView } from "./views/LandingPageView";
+import { AdminView } from "./views/AdminView";
+import { useWallet } from "./lib/WalletContext";
+import { ShieldAlert } from "lucide-react";
 
 function AppContent() {
     const location = useLocation();
     const navigate = useNavigate();
+    const { isAdmin, walletAddress } = useWallet();
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -41,13 +45,18 @@ function AppContent() {
         return <LandingPageView onNavigate={(view) => navigate(`/${view}`)} />;
     }
 
-    const navItems = [
-        { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-        { path: "/jobmarket", icon: Briefcase, label: "Marketplace" },
-        { path: "/chat", icon: MessageSquare, label: "Messages" },
-        { path: "/calendar", icon: Calendar, label: "Calendar" },
-        { path: "/profile", icon: UserCircle, label: "Profile" },
-    ];
+    const navItems = isAdmin 
+        ? [
+            { path: "/admin", icon: ShieldAlert, label: "Admin Panel" },
+            { path: "/chat", icon: MessageSquare, label: "Messages" },
+          ]
+        : [
+            { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+            { path: "/jobmarket", icon: Briefcase, label: "Marketplace" },
+            { path: "/chat", icon: MessageSquare, label: "Messages" },
+            { path: "/calendar", icon: Calendar, label: "Calendar" },
+            { path: "/profile", icon: UserCircle, label: "Profile" },
+        ];
 
     const handleNavClick = (path: string) => {
         navigate(path);
@@ -176,26 +185,25 @@ function AppContent() {
                 <div className="max-w-7xl mx-auto">
                     <AnimatePresence mode="wait">
                         <Routes location={location} key={location.pathname}>
-                            <Route
-                                path="/dashboard"
-                                element={<DashboardView />}
-                            />
-                            <Route
-                                path="/dashboard/summary/:type"
-                                element={<DashboardSummaryView />}
-                            />
-                            <Route
-                                path="/jobmarket"
-                                element={<MarketplaceView />}
-                            />
-                            <Route path="/chat" element={<ProjectChatView />} />
-                            <Route path="/calendar" element={<CalendarView />} />
-                            <Route path="/profile" element={<ProfileView />} />
-
-                            <Route
-                                path="*"
-                                element={<Navigate to="/dashboard" replace />}
-                            />
+                            {!walletAddress ? (
+                                <Route path="*" element={<Navigate to="/" replace />} />
+                            ) : isAdmin ? (
+                                <>
+                                    <Route path="/admin" element={<AdminView />} />
+                                    <Route path="/chat" element={<ProjectChatView />} />
+                                    <Route path="*" element={<Navigate to="/admin" replace />} />
+                                </>
+                            ) : (
+                                <>
+                                    <Route path="/dashboard" element={<DashboardView />} />
+                                    <Route path="/dashboard/summary/:type" element={<DashboardSummaryView />} />
+                                    <Route path="/jobmarket" element={<MarketplaceView />} />
+                                    <Route path="/chat" element={<ProjectChatView />} />
+                                    <Route path="/calendar" element={<CalendarView />} />
+                                    <Route path="/profile" element={<ProfileView />} />
+                                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                                </>
+                            )}
                         </Routes>
                     </AnimatePresence>
                 </div>

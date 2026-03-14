@@ -22,14 +22,32 @@ const HexagonShape = ({ className }: { className?: string }) => (
 export const LandingPageView: React.FC<LandingPageViewProps> = ({
     onNavigate,
 }) => {
-    const { connectWallet, walletAddress } = useWallet();
+    const { connectWallet, walletAddress, setIsAdmin } = useWallet();
     const [isConnecting, setIsConnecting] = useState(false);
+    const [logoClicks, setLogoClicks] = useState(0);
+    const [lastClickTime, setLastClickTime] = useState(0);
+    const [showAdminConnect, setShowAdminConnect] = useState(false);
 
     useEffect(() => {
         if (walletAddress && isConnecting) {
             onNavigate("dashboard");
         }
     }, [walletAddress, isConnecting, onNavigate]);
+
+    const handleLogoClick = () => {
+        const now = Date.now();
+        if (now - lastClickTime < 500) {
+            const nextCount = logoClicks + 1;
+            setLogoClicks(nextCount);
+            if (nextCount >= 3) {
+                setShowAdminConnect(true);
+                setLogoClicks(0);
+            }
+        } else {
+            setLogoClicks(1);
+        }
+        setLastClickTime(now);
+    };
 
     const handleConnect = async () => {
         if (walletAddress) {
@@ -39,6 +57,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             await connectWallet();
         }
     };
+
+    const handleAdminConnect = async () => {
+        setIsAdmin(true);
+        if (walletAddress) {
+            onNavigate("admin");
+        } else {
+            setIsConnecting(true);
+            await connectWallet();
+            onNavigate("admin");
+        }
+    };
+
 
     return (
         <div className="relative min-h-screen bg-white selection:bg-brand-100 selection:text-brand-900 overflow-hidden">
@@ -184,7 +214,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             </div>
 
             <nav className="relative z-10 h-24 px-4 md:px-8 flex items-center justify-between max-w-7xl mx-auto">
-                <div className="flex items-center gap-3 group cursor-pointer">
+                <div 
+                    className="flex items-center gap-3 group cursor-pointer"
+                    onClick={handleLogoClick}
+                >
                     <div className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg shadow-brand-600/10 border border-zinc-100 group-hover:rotate-12 group-hover:scale-110 transition-transform">
                         <svg
                             viewBox="0 0 100 100"
@@ -241,6 +274,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     </a>
                 </div>
                 <div className="flex items-center gap-4 md:gap-6">
+                    {showAdminConnect && (
+                        <button
+                            onClick={handleAdminConnect}
+                            className="bg-brand-100 text-brand-700 border-2 border-brand-200 px-4 py-2 md:px-6 md:py-3.5 rounded-2xl font-black hover:bg-brand-200 transition-all shadow-lg shadow-brand-500/10 hover:scale-105 active:scale-95 text-sm md:text-base flex items-center gap-2"
+                        >
+                            🛡️ Connect as Admin
+                        </button>
+                    )}
                     <button
                         onClick={handleConnect}
                         className="bg-zinc-900 text-white px-4 py-2 md:px-8 md:py-3.5 rounded-2xl font-black hover:bg-brand-600 transition-all shadow-2xl shadow-zinc-900/20 hover:scale-105 active:scale-95 text-sm md:text-base"
@@ -248,7 +289,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         {walletAddress ? "Go to Dashboard" : "Connect Wallet"}
                     </button>
                 </div>
+
             </nav>
+
 
             <section className="relative z-10 px-4 md:px-8 pt-16 md:pt-28 pb-32 md:pb-48 max-w-7xl mx-auto text-center flex flex-col items-center justify-center">
                 <div className="flex flex-col items-center w-full">

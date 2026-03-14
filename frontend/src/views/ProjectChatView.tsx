@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, Loader2, MessageSquare, FileText, CheckCircle2, Paperclip, X, Plus, ShieldCheck, Coins, UploadCloud, UserCircle, Bot, Calendar, Clock, AlertCircle, Bell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useWallet } from '../lib/WalletContext';
@@ -8,18 +9,23 @@ import { ESCROW_ABI, ESCROW_BYTECODE } from '../lib/escrowContract';
 
 interface Message { id: string; content: string; sender_address: string; receiver_address: string; created_at: string; room_id?: string; }
 interface Notification { id: string; content: string; wallet_address: string; room_id: string; created_at: string; }
-interface ChatHistory { roomId: string; walletAddress: string; name: string; lastMessage: string; time: string; timestamp: number; jobTitle?: string; }
+interface ChatHistory { roomId: string; walletAddress: string; name: string; avatarUrl?: string; lastMessage: string; time: string; timestamp: number; jobTitle?: string; }
 interface Milestone { id: string; project_id: string; title: string; status: 'pending' | 'submitted' | 'approved' | 'rejected'; due_date: string; amount?: string; duration_days?: string; notes?: string; file_url?: string; created_at: string; }
 interface ProjectFile { id: string; file_name: string; file_size: string; file_url?: string; }
 
 export const ProjectChatView: React.FC = () => {
     const { walletAddress } = useWallet();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [messages, setMessages] = useState<Message[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [chatHistory, setChatHistory] = useState<ChatHistory[]>([]);
 
     const [activeRoomId, setActiveRoomId] = useState<string>('');
     const [activeChatWallet, setActiveChatWallet] = useState<string>('');
+    const activeRoomIdRef = useRef<string>('');
+
+    useEffect(() => { activeRoomIdRef.current = activeRoomId; }, [activeRoomId]);
 
     const [newMessage, setNewMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -49,6 +55,10 @@ export const ProjectChatView: React.FC = () => {
     const [isAddingChat, setIsAddingChat] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [filePreview, setFilePreview] = useState<string | null>(null);
+
+    const [isAppealing, setIsAppealing] = useState(false);
+    const [appealReason, setAppealReason] = useState('');
+    const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
 
     const [milestones, setMilestones] = useState<Milestone[]>([]);
     const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -307,6 +317,41 @@ export const ProjectChatView: React.FC = () => {
         } finally { setIsProcessingMilestone(false); }
     };
 
+    const handleSubmittingAppeal = async () => {
+        if (!activeMilestone || !aiVerdict || !appealReason || !walletAddress) return;
+        setIsSubmittingAppeal(true);
+        try {
+            const { error } = await supabase.from('appeals').insert([{
+                milestone_id: activeMilestone.id,
+                project_id: getRoomId(),
+                freelancer_address: walletAddress.toLowerCase(),
+                ai_status: aiVerdict.status,
+                ai_reasoning: aiVerdict.reasoning,
+                freelancer_reason: appealReason,
+                status: 'pending'
+            }]);
+
+            if (error) throw error;
+
+            await supabase.from('messages').insert([{
+                content: `[System] Freelancer has appealed the AI verdict for milestone '${activeMilestone.title}'. A platform moderator will review the case shortly.`,
+                sender_address: walletAddress.toLowerCase(),
+                receiver_address: activeChatWallet.toLowerCase(),
+                room_id: getRoomId()
+            }]);
+
+            alert("Appeal submitted to HexaWork Moderators.");
+            setIsAppealing(false);
+            setAppealReason('');
+            setIsReviewMilestoneOpen(false);
+        } catch (error: any) {
+            console.error(error);
+            alert("Failed to submit appeal: " + error.message);
+        } finally {
+            setIsSubmittingAppeal(false);
+        }
+    };
+
     const handleCompleteProject = async () => {
         if (!window.confirm("Are you sure you want to complete the project and close the chat?")) return;
         setIsProcessingMilestone(true);
@@ -412,12 +457,13 @@ export const ProjectChatView: React.FC = () => {
                 const uniqueRoomIds = Array.from(historyMap.keys());
 
                 if (uniqueWallets.length > 0) {
-                    const { data: usersData } = await supabase.from('users').select('wallet_address, full_name').in('wallet_address', uniqueWallets);
+                    const { data: usersData } = await supabase.from('users').select('wallet_address, full_name, avatar_url').in('wallet_address', uniqueWallets);
                     if (usersData) {
                         usersData.forEach(user => {
                             historyMap.forEach(chat => {
                                 if (chat.walletAddress === user.wallet_address.toLowerCase()) {
                                     chat.name = user.full_name || formatAddress(user.wallet_address);
+                                    chat.avatarUrl = user.avatar_url;
                                 }
                             });
                         });
@@ -438,20 +484,79 @@ export const ProjectChatView: React.FC = () => {
                 const arr = Array.from(historyMap.values()).sort((a, b) => b.timestamp - a.timestamp);
                 setChatHistory(arr);
 
-                if (arr.length > 0) {
-                    const activeExists = arr.some(c => c.roomId === activeRoomId);
-                    if (!activeRoomId || !activeExists) {
+                const currentActiveId = activeRoomIdRef.current;
+                
+                // Only set active chat if none is set or intent is captured
+                if (!currentActiveId) {
+                    if (arr.length > 0) {
                         setActiveRoomId(arr[0].roomId);
                         setActiveChatWallet(arr[0].walletAddress);
+                    } else {
+                        setActiveRoomId('');
+                        setActiveChatWallet('');
                     }
-                } else {
-                    setActiveRoomId('');
-                    setActiveChatWallet('');
                 }
             }
         };
         fetchHistory();
     }, [walletAddress]);
+
+    // Handle new chat initiation from URL parameter (Admin panel -> Mail button)
+    useEffect(() => {
+        const initNewChat = async () => {
+            const queryParams = new URLSearchParams(location.search);
+            const newChatWallet = queryParams.get('newchat');
+            
+            if (newChatWallet && walletAddress) {
+                const lowerWallet = walletAddress.toLowerCase();
+                const lowerNewChat = newChatWallet.toLowerCase();
+                
+                if (lowerWallet !== lowerNewChat) {
+                    const rId = [lowerWallet, lowerNewChat].sort().join('_');
+                    
+                    activeRoomIdRef.current = rId;
+                    setActiveRoomId(rId);
+                    setActiveChatWallet(lowerNewChat);
+                    
+                    // Clear the query parameter so refreshing doesn't trigger it again
+                    navigate('/chat', { replace: true });
+
+                    // Formalize in DB so global fetches pick it up
+                    try {
+                        const { data } = await supabase.from('messages').select('id').eq('room_id', rId).limit(1);
+                        if (!data || data.length === 0) {
+                            await supabase.from('messages').insert([{
+                                content: `[System] Direct message conversation started.`,
+                                sender_address: lowerWallet,
+                                receiver_address: lowerNewChat,
+                                room_id: rId
+                            }]);
+                        }
+                    } catch (e) {
+                         console.error("Failed to formalize new chat:", e);
+                    }
+
+                    // Ensure it appears in the sidebar history immediately
+                    setChatHistory(prev => {
+                        const exists = prev.some(c => c.roomId === rId);
+                        if (!exists) {
+                            return [{
+                                roomId: rId,
+                                walletAddress: lowerNewChat,
+                                name: formatAddress(lowerNewChat),
+                                lastMessage: 'Started Direct Message',
+                                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                timestamp: Date.now(),
+                                jobTitle: "Direct Message"
+                            }, ...prev];
+                        }
+                        return prev;
+                    });
+                }
+            }
+        };
+        initNewChat();
+    }, [location.search, walletAddress, navigate]);
 
     useEffect(() => {
         if (!walletAddress || !activeRoomId || !activeChatWallet) return;
@@ -581,7 +686,49 @@ export const ProjectChatView: React.FC = () => {
                                 {!aiVerdict ? (
                                     <div className="bg-indigo-50/50 border border-indigo-100 p-5 rounded-2xl text-center"><p className="text-xs text-indigo-900/70 mb-4 font-medium">Unsure if the code meets the requirements? Let the AI auditor verify the delivery before you release the funds.</p><button onClick={handleTriggerAIAudit} disabled={isTriggeringAI} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all">{isTriggeringAI ? <Loader2 className="animate-spin" /> : "Run Automated Code Audit"}</button></div>
                                 ) : (
-                                    <div className={`p-5 rounded-2xl border ${aiVerdict.status === 'RELEASE' ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}><div className="flex items-center gap-2 mb-2"><span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${aiVerdict.status === 'RELEASE' ? 'bg-emerald-200 text-emerald-800' : 'bg-amber-200 text-amber-800'}`}>Recommendation: {aiVerdict.status === 'RELEASE' ? 'APPROVE' : 'DISPUTE'}</span></div><p className="text-sm font-medium text-zinc-800 leading-relaxed mb-4">{aiVerdict.reasoning}</p><p className="text-[10px] text-zinc-500 font-bold">* This is an automated suggestion. You have the final decision.</p></div>
+                                    <div className={`p-5 rounded-2xl border ${aiVerdict.status === 'RELEASE' ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${aiVerdict.status === 'RELEASE' ? 'bg-emerald-200 text-emerald-800' : 'bg-amber-200 text-amber-800'}`}>
+                                                Recommendation: {aiVerdict.status === 'RELEASE' ? 'APPROVE' : 'DISPUTE'}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm font-medium text-zinc-800 leading-relaxed mb-4">{aiVerdict.reasoning}</p>
+                                        
+                                        {aiVerdict.status === 'DISPUTE' && userRole === 'freelancer' && !isAppealing && (
+                                            <div className="mt-4 pt-4 border-t border-amber-200">
+                                                <p className="text-[10px] text-amber-800 font-black uppercase tracking-widest mb-2">Don't agree with the AI?</p>
+                                                <button 
+                                                    onClick={() => setIsAppealing(true)}
+                                                    className="w-full py-2.5 bg-white border border-amber-300 text-amber-700 rounded-lg text-xs font-black uppercase hover:bg-amber-100 transition-all"
+                                                >
+                                                    Appeal to Moderator
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {isAppealing && (
+                                            <div className="mt-4 pt-4 border-t border-amber-200 space-y-3">
+                                                <p className="text-[10px] text-amber-800 font-black uppercase tracking-widest">State your case to the HexaWork Admin:</p>
+                                                <textarea 
+                                                    value={appealReason}
+                                                    onChange={(e) => setAppealReason(e.target.value)}
+                                                    placeholder="Explain why the AI analysis is incorrect..."
+                                                    className="w-full h-20 p-3 bg-white border border-amber-200 rounded-xl text-xs outline-none focus:border-amber-400"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => setIsAppealing(false)} className="flex-1 py-2 bg-transparent text-amber-800 text-[10px] font-black uppercase">Cancel</button>
+                                                    <button 
+                                                        onClick={handleSubmittingAppeal}
+                                                        disabled={isSubmittingAppeal || !appealReason}
+                                                        className="flex-[2] py-2 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase shadow-md shadow-amber-200 disabled:opacity-50"
+                                                    >
+                                                        {isSubmittingAppeal ? 'Sending...' : 'Send Appeal'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <p className="text-[10px] text-zinc-500 font-bold mt-3">* This is an automated suggestion. You have the final decision.</p>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -617,9 +764,15 @@ export const ProjectChatView: React.FC = () => {
                                     className={`w-full px-4 py-3.5 text-left flex items-center gap-3 transition-all ${
                                         isActive ? 'bg-brand-50 border-l-[3px] border-l-brand-500' : 'border-l-[3px] border-l-transparent hover:bg-zinc-50'
                                     }`}>
-                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-black flex-shrink-0 ${
-                                        isActive ? 'bg-brand-600 text-white' : 'bg-zinc-100 text-zinc-500'
-                                    }`}>{initials}</div>
+                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-black flex-shrink-0 overflow-hidden shadow-inner border border-zinc-200/50 ${
+                                        isActive ? 'bg-brand-600 text-white border-brand-500' : 'bg-zinc-100 text-zinc-500'
+                                    }`}>
+                                        {chat.avatarUrl ? (
+                                            <img src={chat.avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                                        ) : (
+                                            initials
+                                        )}
+                                    </div>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex justify-between items-baseline mb-0.5">
                                             <p className={`text-xs font-black truncate ${isActive ? 'text-brand-700' : 'text-zinc-900'}`}>{chat.jobTitle || "Project Chat"}</p>
@@ -645,9 +798,13 @@ export const ProjectChatView: React.FC = () => {
                 ) : (
                     <>
                         <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-white/90 backdrop-blur-md sticky top-0 z-10 shadow-sm">
-                            <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-2xl bg-brand-100 flex items-center justify-center text-xs font-black text-brand-700 flex-shrink-0">
-                                    {activeChatName.slice(0,2).toUpperCase()}
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-brand-100 flex items-center justify-center text-sm font-black text-brand-700 flex-shrink-0 overflow-hidden shadow-inner border border-brand-200">
+                                    {activeChatDetails?.avatarUrl ? (
+                                        <img src={activeChatDetails.avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                                    ) : (
+                                         activeChatName.slice(0,2).toUpperCase()
+                                    )}
                                 </div>
                                 <div>
                                     <p className="font-black text-zinc-900 text-sm leading-tight">{activeChatDetails?.jobTitle || "Project Chat"}</p>
@@ -656,25 +813,37 @@ export const ProjectChatView: React.FC = () => {
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-6 space-y-3" style={{ backgroundImage: 'radial-gradient(#e4e4e7 1px, transparent 1px)', backgroundSize: '24px 24px', backgroundColor: '#fafafa' }}>
-                            {messages.filter(msg => !msg.content.startsWith('[System]')).map(msg => {
+                            {messages.filter(msg => !msg.content.startsWith('[System]')).map((msg, index, arr) => {
                                 const isMine = msg.sender_address.toLowerCase() === walletAddress?.toLowerCase();
+                                const isConsecutive = index > 0 && arr[index - 1].sender_address.toLowerCase() === msg.sender_address.toLowerCase();
                                 return (
-                                    <div key={msg.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
+                                    <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                                         {!isMine && (
-                                            <span className="text-[10px] font-bold text-zinc-400 ml-2 mb-1">{formatAddress(msg.sender_address)}</span>
-                                        )}
-                                        <div className={`px-4 py-3 rounded-2xl max-w-[75%] overflow-hidden shadow-sm ${
-                                            isMine
-                                                ? 'bg-brand-600 text-white rounded-br-sm'
-                                                : 'bg-white border border-zinc-100 text-zinc-800 rounded-bl-sm'
-                                        }`}>
-                                            <div className="text-sm whitespace-pre-wrap break-words break-all leading-relaxed">
-                                                {renderMessageContent(msg.content)}
+                                            <div className="w-8 h-8 rounded-full bg-zinc-200 mr-2 flex-shrink-0 overflow-hidden flex items-center justify-center font-black text-[9px] text-zinc-500 border border-zinc-300">
+                                                {activeChatDetails?.avatarUrl && !isConsecutive ? (
+                                                    <img src={activeChatDetails.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                                                ) : isConsecutive ? (
+                                                    <span className="opacity-0">.</span>
+                                                ) : (
+                                                    activeChatName.charAt(0).toUpperCase()
+                                                )}
                                             </div>
+                                        )}
+                                        <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} max-w-[70%]`}>
+                                            {!isMine && !isConsecutive && (
+                                                <span className="text-[10px] font-bold text-zinc-400 ml-1 mb-1">{activeChatName}</span>
+                                            )}
+                                            <div className={`px-4 py-3 rounded-[1.25rem] shadow-sm leading-relaxed ${
+                                                isMine
+                                                    ? 'bg-brand-600 text-white rounded-br-sm shadow-brand-500/10'
+                                                    : 'bg-white border border-zinc-100 text-zinc-800 rounded-bl-sm'
+                                            }`}>
+                                                <div className="text-sm whitespace-pre-wrap break-words break-all">
+                                                    {renderMessageContent(msg.content)}
+                                                </div>
+                                            </div>
+                                            <span className="text-[9px] font-medium text-zinc-400 mt-1 mx-2">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                         </div>
-                                        <span className={`text-[9px] font-medium mt-1 mx-2 ${
-                                            isMine ? 'text-zinc-400' : 'text-zinc-400'
-                                        }`}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                     </div>
                                 );
                             })}

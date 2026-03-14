@@ -4,18 +4,25 @@ import { supabase } from './supabase';
 
 interface WalletContextType {
     walletAddress: string | null;
+    isAdmin: boolean;
     connectWallet: () => Promise<void>;
     disconnectWallet: () => void;
+    setIsAdmin: (isAdmin: boolean) => void;
 }
 
 const WalletContext = createContext<WalletContextType>({
     walletAddress: null,
+    isAdmin: false,
     connectWallet: async () => {},
     disconnectWallet: () => {},
+    setIsAdmin: () => {},
 });
+
 
 export const WalletProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
     const [walletAddress, setWalletAddress] = useState<string | null>(null);
+    const [isAdmin, setIsAdmin] = useState(false);
+
 
     const registerUserIfNotExists = async (address: string) => {
         const addrLower = address.toLowerCase();
@@ -66,13 +73,15 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({ children
 
     const disconnectWallet = () => {
         setWalletAddress(null);
+        setIsAdmin(false);
     };
 
     return (
-        <WalletContext.Provider value={{ walletAddress, connectWallet, disconnectWallet }}>
+        <WalletContext.Provider value={{ walletAddress, connectWallet, disconnectWallet, isAdmin, setIsAdmin }}>
             {children}
         </WalletContext.Provider>
     );
 };
+
 
 export const useWallet = () => useContext(WalletContext);

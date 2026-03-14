@@ -47,14 +47,16 @@ interface ProjectFile { id: string; file_name: string; file_size: string; file_u
 
 const getFastFees = async (provider: ethers.BrowserProvider) => {
     const feeData = await provider.getFeeData();
-    const fees: any = {};
-    if (feeData.maxFeePerGas) {
-        fees.maxFeePerGas = (feeData.maxFeePerGas * 13n) / 10n;
-    }
-    if (feeData.maxPriorityFeePerGas) {
-        fees.maxPriorityFeePerGas = (feeData.maxPriorityFeePerGas * 13n) / 10n;
-    }
-    return fees;
+
+    const priorityFee = ethers.parseUnits("10000", "gwei");
+
+    const currentMaxFee = feeData.maxFeePerGas || ethers.parseUnits("50", "gwei");
+    const maxFee = currentMaxFee + priorityFee;
+
+    return {
+        maxPriorityFeePerGas: priorityFee,
+        maxFeePerGas: maxFee
+    };
 };
 
 export const ProjectChatView: React.FC = () => {

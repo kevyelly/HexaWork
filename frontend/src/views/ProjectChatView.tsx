@@ -353,6 +353,17 @@ export const ProjectChatView: React.FC = () => {
             await supabase.from('project_milestones').update({ status: 'appealed', appeal_start_time: appealTime }).eq('id', activeMilestone.id);
             setMilestones(prev => prev.map(m => m.id === activeMilestone.id ? { ...m, status: 'appealed', appeal_start_time: appealTime } : m));
 
+            // Insert into appeals table
+            await supabase.from('appeals').insert([{
+                milestone_id: activeMilestone.id,
+                project_id: getRoomId(),
+                freelancer_address: activeChatWallet.toLowerCase(),
+                ai_status: activeMilestone.ai_verdict || 'none',
+                ai_reasoning: 'AI verdict was requested by the employer and contested by the freelancer.',
+                freelancer_reason: appealReason,
+                status: 'pending'
+            }]);
+
             const notificationsPayload = [
                 {
                     room_id: getRoomId(),
@@ -608,7 +619,15 @@ export const ProjectChatView: React.FC = () => {
                 ...(userNotifs?.map(n => n.room_id) || [])
             ]);
 
-            let msgQuery;
+            let allMessages: Message[] = [];
+            
+            const { data: directMsgs } = await supabase
+                .from('messages')
+                .select('*')
+                .or(`sender_address.eq.${lowerWallet},receiver_address.eq.${lowerWallet}`)
+                .order('created_at', { ascending: false });
+            
+            if (directMsgs) allMessages.push(...directMsgs);
 
             if (isAdminUser) {
                 const { data: appealedMilestones } = await supabase
@@ -616,21 +635,23 @@ export const ProjectChatView: React.FC = () => {
                     .select('project_id')
                     .in('status', ['appealed', 'escalated']);
 
-                if (!appealedMilestones || appealedMilestones.length === 0) {
-                    setChatHistory([]);
-                    setActiveRoomId('');
-                    setActiveChatWallet('');
-                    return;
+                if (appealedMilestones && appealedMilestones.length > 0) {
+                    const appealedProjectIds = Array.from(new Set(appealedMilestones.map(m => m.project_id)));
+                    appealedProjectIds.forEach(id => roomsWithUnread.add(id));
+                    
+                    const { data: appealedMsgs } = await supabase
+                        .from('messages')
+                        .select('*')
+                        .in('room_id', appealedProjectIds)
+                        .order('created_at', { ascending: false });
+                        
+                    if (appealedMsgs) allMessages.push(...appealedMsgs);
                 }
-
-                const appealedProjectIds = Array.from(new Set(appealedMilestones.map(m => m.project_id)));
-                appealedProjectIds.forEach(id => roomsWithUnread.add(id));
-                msgQuery = supabase.from('messages').select('*').in('room_id', appealedProjectIds).order('created_at', { ascending: false });
-            } else {
-                msgQuery = supabase.from('messages').select('*').or(`sender_address.eq.${lowerWallet},receiver_address.eq.${lowerWallet}`).order('created_at', { ascending: false });
             }
 
-            const { data } = await msgQuery;
+            const uniqueMsgsObj: { [key: string]: Message } = {};
+            allMessages.forEach(m => uniqueMsgsObj[m.id!] = m);
+            const data = Object.values(uniqueMsgsObj).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
             if (data) {
                 const historyMap = new Map<string, ChatHistory>();
@@ -646,7 +667,7 @@ export const ProjectChatView: React.FC = () => {
                     const receiver = msg.receiver_address.toLowerCase();
 
                     let other = sender === lowerWallet ? receiver : sender;
-                    if (isAdminUser) {
+                    if (isAdminUser && sender !== lowerWallet && receiver !== lowerWallet) {
                         other = sender;
                     }
 
@@ -696,8 +717,7 @@ export const ProjectChatView: React.FC = () => {
 
                 const currentActiveId = activeRoomIdRef.current;
                 
-                // Only set active chat if none is set or intent is captured
-                if (!currentActiveId) {
+                if (!currentActiveId || (currentActiveId && closedRooms.has(currentActiveId))) {
                     if (arr.length > 0) {
                         setActiveRoomId(arr[0].roomId);
                         setActiveChatWallet(arr[0].walletAddress);

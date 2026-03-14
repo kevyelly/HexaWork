@@ -2,6 +2,11 @@ import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import axios from 'axios';
+import dns from 'dns';
+
+//npx ts-node server.ts
+
+dns.setDefaultResultOrder('ipv4first');
 
 dotenv.config();
 
@@ -23,17 +28,25 @@ interface ZoomMeetingResponse {
 }
 
 async function getZoomAccessToken(): Promise<string> {
-    const tokenUrl = `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${process.env.ZOOM_ACCOUNT_ID}`;
+    const accountId = (process.env.ZOOM_ACCOUNT_ID || '').trim();
+    const clientId = (process.env.ZOOM_CLIENT_ID || '').trim();
+    const clientSecret = (process.env.ZOOM_CLIENT_SECRET || '').trim();
 
-    const clientId = process.env.ZOOM_CLIENT_ID || '';
-    const clientSecret = process.env.ZOOM_CLIENT_SECRET || '';
+    if (!accountId || !clientId || !clientSecret) {
+        console.error("CRITICAL: Missing Zoom credentials in .env file");
+        throw new Error("Missing Zoom credentials");
+    }
 
     const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
+    const params = new URLSearchParams();
+    params.append('grant_type', 'account_credentials');
+    params.append('account_id', accountId);
+
     try {
         const response = await axios.post<ZoomTokenResponse>(
-            tokenUrl,
-            {},
+            'https://zoom.us/oauth/token',
+            params.toString(),
             {
                 headers: {
                     'Authorization': `Basic ${authHeader}`,
@@ -43,14 +56,24 @@ async function getZoomAccessToken(): Promise<string> {
         );
         return response.data.access_token;
     } catch (error: any) {
-        console.error("Error getting Zoom token:", error.response?.data || error.message);
+        console.error("Zoom Auth Error Details:");
+        if (error.response) {
+            console.error("Status:", error.response.status);
+            console.error("Data:", JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error("Message:", error.message);
+            console.error("Code:", error.code);
+        }
         throw new Error("Failed to authenticate with Zoom");
     }
 }
 
 app.post('/api/create-meeting', async (req: Request, res: Response) => {
+    console.log("👉 Received request to generate Zoom meeting...");
+
     try {
         const accessToken = await getZoomAccessToken();
+        console.log("✅ Successfully retrieved Zoom Access Token!");
 
         const meetingResponse = await axios.post<ZoomMeetingResponse>(
             'https://api.zoom.us/v2/users/me/meetings',
@@ -71,13 +94,14 @@ app.post('/api/create-meeting', async (req: Request, res: Response) => {
             }
         );
 
+        console.log("Successfully created Zoom meeting!");
         res.json({
             join_url: meetingResponse.data.join_url,
             start_url: meetingResponse.data.start_url
         });
 
     } catch (error: any) {
-        console.error("Error creating meeting:", error.response?.data || error.message);
+        console.error("Final Error creating meeting:", error.response?.data || error.message);
         res.status(500).json({ error: "Failed to create Zoom meeting" });
     }
 });
@@ -85,7 +109,5 @@ app.post('/api/create-meeting', async (req: Request, res: Response) => {
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
-    console.log(`zoom running http://localhost:${PORT}`);
+    console.log(`Zoom backend running on http://localhost:${PORT}`);
 });
-
-

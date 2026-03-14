@@ -199,7 +199,6 @@ export const MarketplaceView: React.FC = () => {
                 return;
             }
 
-            // NEW: Checker to prevent applying if working for this employer already
             const isAlreadyWorking = myApplications.some(app =>
                 app.jobs?.employer_address?.toLowerCase() === selectedJob.employer_address.toLowerCase() &&
                 (app.status === 'accepted' || app.status === 'pending_stake')
@@ -298,13 +297,18 @@ export const MarketplaceView: React.FC = () => {
             const factory = new ethers.ContractFactory(ESCROW_ABI, ESCROW_BYTECODE, signer);
             const contract = await factory.deploy(checksummedFreelancer, milestoneAmountsInWei, durationDaysArray, { value: totalWei, gasLimit: 3000000 });
 
+            await contract.waitForDeployment();
+            const contractAddress = await contract.getAddress();
+
             const deployTx = contract.deploymentTransaction();
             if (deployTx) {
-                await deployTx.wait(1);
+                const receipt = await deployTx.wait(1);
+                if (!receipt || receipt.status === 0) {
+                    throw new Error("Transaction reverted or dropped by the network.");
+                }
             } else {
-                await contract.waitForDeployment();
+                throw new Error("Failed to retrieve deployment transaction.");
             }
-            const contractAddress = await contract.getAddress();
 
             const { error: jobErr } = await supabase.from('jobs').update({ status: 'in-progress', contract_address: contractAddress }).eq('id', jobToAccept.id);
             if (jobErr) throw new Error("DB Error (Job Update): " + jobErr.message);
@@ -347,6 +351,13 @@ export const MarketplaceView: React.FC = () => {
 
             await supabase.from('jobs').update({ status: 'cancelled' }).eq('id', job.id);
             await supabase.from('applications').update({ status: 'cancelled' }).eq('id', app.id);
+
+            await supabase.from('messages').insert([{
+                content: `[System] Contract Cancelled`,
+                sender_address: job.employer_address.toLowerCase(),
+                receiver_address: app.freelancer_address.toLowerCase(),
+                room_id: job.id
+            }]);
 
             alert("Refund successful. Project has been cancelled due to the freelancer missing the staking window.");
             setIsReviewModalOpen(false);
@@ -422,7 +433,11 @@ export const MarketplaceView: React.FC = () => {
 
     const displayJobs = activeTab === 'browse'
         ? jobs.filter(j => j.status === 'open' && j.employer_address.toLowerCase() !== walletAddress?.toLowerCase())
-        : jobs.filter(j => j.employer_address.toLowerCase() === walletAddress?.toLowerCase());
+        : jobs.filter(j =>
+            j.employer_address.toLowerCase() === walletAddress?.toLowerCase() &&
+            j.status !== 'completed' &&
+            j.status !== 'cancelled'
+        );
 
     return (
         <div className="p-4 md:p-6 space-y-8 relative">
@@ -520,10 +535,12 @@ export const MarketplaceView: React.FC = () => {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8">
                     {displayJobs.length === 0 ? (
-                        <div className="col-span-full text-center py-10 text-zinc-500 font-medium border-2 border-dashed border-zinc-200 rounded-3xl">No jobs found.</div>
+                        <div className="col-span-full text-center py-20 bg-zinc-50 rounded-[3rem] border-2 border-dashed border-zinc-200">
+                            <p className="text-zinc-500 font-bold">No active projects found.</p>
+                            <p className="text-xs text-zinc-400 mt-2">Completed projects are archived and removed from this view.</p>
+                        </div>
                     ) : (
                         displayJobs.map((job, i) => {
-                            // NEW: Pre-calculate states for the Grid Cards
                             const hasApplied = myApplications.some(app => app.job_id === job.id);
                             const isWorkingForEmployer = myApplications.some(app =>
                                 app.jobs?.employer_address?.toLowerCase() === job.employer_address.toLowerCase() &&
@@ -690,7 +707,6 @@ export const MarketplaceView: React.FC = () => {
                                 {selectedJob.tags.map(tag => (<span key={tag} className="text-[10px] font-black uppercase tracking-wider text-zinc-500 bg-zinc-100 px-3 py-1.5 rounded-lg">{tag}</span>))}
                             </div>
 
-                            {/* CTA Logic - Prevents Application */}
                             {(() => {
                                 const hasApplied = myApplications.some(app => app.job_id === selectedJob.id);
                                 const isWorkingForEmployer = myApplications.some(app =>

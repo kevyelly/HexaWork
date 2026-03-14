@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
     BrowserRouter,
     Routes,
@@ -7,16 +7,17 @@ import {
     useLocation,
     useNavigate,
 } from "react-router-dom";
-import { WalletProvider } from "./lib/WalletContext";
+import { WalletProvider, useWallet } from "./lib/WalletContext";
+import { supabase } from "./lib/supabase";
 import {
     LayoutDashboard,
     Briefcase,
     MessageSquare,
     Menu,
     X,
-    HelpCircle,
     Calendar,
-    UserCircle
+    UserCircle,
+    ShieldAlert
 } from "lucide-react";
 import { View } from "./types";
 import { motion, AnimatePresence } from "motion/react";
@@ -31,8 +32,12 @@ import { CalendarView } from "./views/CalendarView";
 import { ProfileView } from "./views/ProfileView";
 import { LandingPageView } from "./views/LandingPageView";
 import { AdminView } from "./views/AdminView";
-import { useWallet } from "./lib/WalletContext";
-import { ShieldAlert } from "lucide-react";
+
+const ADMIN_WALLETS = [
+    "0xbeE339Aa5d7af6758164F5739a2c98EB6f16a3AB",
+    "0x832d9D4D866A33205e5FE43aF9C15608431759C0",
+    "0x342f52294501135f2148840366271f59598739EA"
+];
 
 function AppContent() {
     const location = useLocation();
@@ -40,6 +45,78 @@ function AppContent() {
     const { isAdmin, walletAddress } = useWallet();
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+
+    // UNIFIED NOTIFICATION SCANNER
+    useEffect(() => {
+        if (!walletAddress) {
+            setHasUnreadMessages(false);
+            return;
+        }
+
+        const lowerWallet = walletAddress.toLowerCase();
+        const isAdminUser = ADMIN_WALLETS.map(w => w.toLowerCase()).includes(lowerWallet);
+
+        const checkUnread = async () => {
+            try {
+                let isUnread = false;
+
+                // 1. Check for Unread Text Messages
+                const { data: msgs } = await supabase
+                    .from('messages')
+                    .select('id')
+                    .eq('receiver_address', lowerWallet)
+                    .or('is_read.eq.false,is_read.is.null') // catches explicitly false OR old null messages
+                    .limit(1);
+
+                if (msgs && msgs.length > 0) isUnread = true;
+
+                // 2. Check for Active System Alerts (Blue notification boxes)
+                if (!isUnread) {
+                    const { data: notifs } = await supabase
+                        .from('notifications')
+                        .select('id')
+                        .eq('wallet_address', lowerWallet)
+                        .limit(1);
+
+                    if (notifs && notifs.length > 0) isUnread = true;
+                }
+
+                // 3. Check for Admin Disputes (Admins only)
+                if (isAdminUser && !isUnread) {
+                    const { data: disputes } = await supabase
+                        .from('project_milestones')
+                        .select('id')
+                        .in('status', ['appealed', 'escalated'])
+                        .limit(1);
+
+                    if (disputes && disputes.length > 0) isUnread = true;
+                }
+
+                setHasUnreadMessages(isUnread);
+            } catch (error) {
+                console.error("Failed to fetch notification status:", error);
+            }
+        };
+
+        // Run immediately
+        checkUnread();
+
+        // 3-Second Background Polling (Guarantees the dot updates even if WebSockets drop)
+        const intervalId = setInterval(checkUnread, 3000);
+
+        // Realtime WebSockets for instant updates when possible
+        const channel = supabase.channel('global_nav_tracker')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, checkUnread)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, checkUnread)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'project_milestones' }, checkUnread)
+            .subscribe();
+
+        return () => {
+            clearInterval(intervalId);
+            supabase.removeChannel(channel);
+        };
+    }, [walletAddress]);
 
     if (location.pathname === "/") {
         return <LandingPageView onNavigate={(view) => navigate(`/${view}`)} />;
@@ -96,6 +173,7 @@ function AppContent() {
                             active={item.path === "/dashboard" ? isDashboardActive : location.pathname === item.path}
                             onClick={() => handleNavClick(item.path)}
                             collapsed={!sidebarOpen}
+                            hasNotification={item.path === "/chat" ? hasUnreadMessages : false}
                         />
                     ))}
                 </nav>
@@ -161,6 +239,7 @@ function AppContent() {
                                         onClick={() =>
                                             handleNavClick(item.path)
                                         }
+                                        hasNotification={item.path === "/chat" ? hasUnreadMessages : false}
                                     />
                                 ))}
                             </nav>

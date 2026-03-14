@@ -7,6 +7,12 @@ import { useWallet } from '../lib/WalletContext';
 import { ethers } from 'ethers';
 import { ESCROW_ABI, ESCROW_BYTECODE } from '../lib/escrowContract';
 
+const ADMIN_WALLETS = [
+    "0xbeE339Aa5d7af6758164F5739a2c98EB6f16a3AB",
+    "0x832d9D4D866A33205e5FE43aF9C15608431759C0",
+    "0x342f52294501135f2148840366271f59598739EA"
+];
+
 interface Job { id: string; employer_address: string; title: string; description: string; budget: string; tags: string[]; status: string; created_at: string; milestones_json?: any[]; contract_address?: string; experience_level?: string; project_type?: string; deadline?: string; }
 interface Application { id: string; job_id: string; freelancer_address: string; cover_letter: string; resume_url?: string; status: string; created_at: string; meeting_date?: string; meeting_link?: string; hired_at?: string; jobs?: Job; }
 
@@ -245,7 +251,15 @@ export const MarketplaceView: React.FC = () => {
         if (!selectedApplicant || !interviewDate || !interviewTime) return;
         setIsProcessing(true);
         try {
-            const meetingLink = `https://zoom.us/j/${Math.floor(100000000 + Math.random() * 900000000)}?pwd=localtestmock`;
+            const response = await fetch('http://localhost:3001/api/create-meeting', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) throw new Error("Failed to generate Zoom meeting link. Ensure your server.ts backend is running.");
+
+            const data = await response.json();
+            const meetingLink = data.join_url;
             const formattedDateTime = `${interviewDate} at ${interviewTime}`;
 
             const { error } = await supabase.from('applications').update({ status: 'interviewing', meeting_date: formattedDateTime, meeting_link: meetingLink }).eq('id', selectedApplicant.id);
@@ -256,8 +270,8 @@ export const MarketplaceView: React.FC = () => {
                 content: `Interview Scheduled! The employer wants to meet on ${formattedDateTime}. Check your My Applications tab for the link.`
             }]);
 
-            const { data } = await supabase.from('applications').select('*').eq('job_id', selectedJob?.id);
-            if (data) setJobApplicants(data);
+            const { data: updatedApplicants } = await supabase.from('applications').select('*').eq('job_id', selectedJob?.id);
+            if (updatedApplicants) setJobApplicants(updatedApplicants);
 
             setIsInterviewModalOpen(false);
             setInterviewDate('');
@@ -287,6 +301,7 @@ export const MarketplaceView: React.FC = () => {
             const signer = await provider.getSigner();
 
             const checksummedFreelancer = ethers.getAddress(freelancerAddr);
+            const checksummedAdmins = ADMIN_WALLETS.map(addr => ethers.getAddress(addr));
 
             const milestoneAmountsInWei = jobToAccept.milestones_json!.map((m: any) => ethers.parseEther(m.amount?.toString() || "0"));
             const durationDaysArray = jobToAccept.milestones_json!.map((m: any) => parseInt(m.duration_days?.toString() || "7"));
@@ -295,7 +310,14 @@ export const MarketplaceView: React.FC = () => {
             if (totalWei === 0n) throw new Error("Cannot deploy a contract with 0 budget.");
 
             const factory = new ethers.ContractFactory(ESCROW_ABI, ESCROW_BYTECODE, signer);
-            const contract = await factory.deploy(checksummedFreelancer, milestoneAmountsInWei, durationDaysArray, { value: totalWei, gasLimit: 3000000 });
+
+            const contract = await factory.deploy(
+                checksummedFreelancer,
+                checksummedAdmins,
+                milestoneAmountsInWei,
+                durationDaysArray,
+                { value: totalWei, gasLimit: 3000000 }
+            );
 
             await contract.waitForDeployment();
             const contractAddress = await contract.getAddress();
@@ -654,8 +676,8 @@ export const MarketplaceView: React.FC = () => {
                             <div className="flex flex-wrap gap-2 mb-6">
                                 {selectedJob.experience_level && <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">{selectedJob.experience_level} Level</span>}
                                 {selectedJob.project_type && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">{selectedJob.project_type}</span>}
-                                <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-3 py-1 rounded-full">🌐 Remote</span>
-                                {selectedJob.deadline && <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">📅 Due {new Date(selectedJob.deadline).toLocaleDateString()}</span>}
+                                <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-3 py-1 rounded-full">Remote</span>
+                                {selectedJob.deadline && <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">Due {new Date(selectedJob.deadline).toLocaleDateString()}</span>}
                             </div>
                         </div>
 

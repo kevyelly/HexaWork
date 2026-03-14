@@ -524,35 +524,77 @@ export const ProjectChatView: React.FC = () => {
                 </div>
             )}
 
-            <div className="hidden lg:flex flex-col w-72 border-r bg-zinc-50/30">
-                <div className="p-4 border-b bg-white flex justify-between items-center"><span className="font-black text-zinc-900 text-sm">Inbox</span><button onClick={() => setIsAddingChat(!isAddingChat)} className="p-1.5 hover:bg-zinc-100 rounded-lg text-brand-600"><Plus size={18} /></button></div>
+            <div className="hidden lg:flex flex-col w-72 border-r border-zinc-100 bg-white">
+                <div className="px-5 py-4 border-b border-zinc-100 flex justify-between items-center">
+                    <span className="font-black text-zinc-900 tracking-tight">Inbox</span>
+                    <button onClick={() => setIsAddingChat(!isAddingChat)} className="p-1.5 hover:bg-brand-50 rounded-xl text-brand-600 transition-all"><Plus size={18} /></button>
+                </div>
                 <div className="flex-1 overflow-y-auto">
-                    {chatHistory.map(chat => (
-                        <button key={chat.roomId} onClick={() => { setActiveRoomId(chat.roomId); setActiveChatWallet(chat.walletAddress); }} className={`w-full p-4 text-left border-b flex items-center gap-3 ${activeRoomId === chat.roomId ? 'bg-white border-l-4 border-l-brand-500 shadow-sm' : 'hover:bg-zinc-100/50'}`}>
-                            <UserCircle className="text-zinc-400 flex-shrink-0" size={24} />
-                            <div className="min-w-0 flex-1">
-                                <p className="text-xs font-black text-zinc-900 truncate">{chat.name}</p>
-                                <p className="text-[10px] text-zinc-400 truncate mt-1">{chat.lastMessage}</p>
-                            </div>
-                        </button>
-                    ))}
+                    {chatHistory.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-40 text-zinc-400">
+                            <MessageSquare size={28} className="mb-2 opacity-30" />
+                            <p className="text-xs font-bold">No conversations yet</p>
+                        </div>
+                    )}
+                    {chatHistory.map(chat => {
+                        const isActive = activeRoomId === chat.roomId;
+                        const initials = chat.name.slice(0, 2).toUpperCase();
+                        return (
+                            <button key={chat.roomId} onClick={() => { setActiveRoomId(chat.roomId); setActiveChatWallet(chat.walletAddress); }}
+                                className={`w-full px-4 py-3.5 text-left flex items-center gap-3 transition-all ${
+                                    isActive ? 'bg-brand-50 border-l-[3px] border-l-brand-500' : 'border-l-[3px] border-l-transparent hover:bg-zinc-50'
+                                }`}>
+                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-black flex-shrink-0 ${
+                                    isActive ? 'bg-brand-600 text-white' : 'bg-zinc-100 text-zinc-500'
+                                }`}>{initials}</div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex justify-between items-baseline mb-0.5">
+                                        <p className={`text-xs font-black truncate ${isActive ? 'text-brand-700' : 'text-zinc-900'}`}>{chat.name}</p>
+                                        <span className="text-[9px] text-zinc-400 font-medium ml-2 flex-shrink-0">{chat.time}</span>
+                                    </div>
+                                    <p className="text-[10px] text-zinc-400 truncate">{chat.lastMessage}</p>
+                                </div>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
             <div className="flex-1 flex flex-col bg-white min-w-0 relative">
-                <div className="p-4 border-b font-black flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-10">
-                    <span className="text-zinc-900">{activeChatName}</span>
-                </div>
-                <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-zinc-50/20">
-                    {messages.filter(msg => !msg.content.startsWith('[System]')).map(msg => (
-                        <div key={msg.id} className={`flex ${msg.sender_address.toLowerCase() === walletAddress?.toLowerCase() ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`p-4 rounded-3xl max-w-[80%] overflow-hidden ${msg.sender_address.toLowerCase() === walletAddress?.toLowerCase() ? 'bg-brand-600 text-white rounded-tr-sm shadow-lg' : 'bg-white border text-zinc-800 rounded-tl-sm shadow-sm'}`}>
-                                <div className="text-sm whitespace-pre-wrap break-words break-all leading-relaxed">
-                                    {renderMessageContent(msg.content)}
-                                </div>
-                            </div>
+                <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-white/90 backdrop-blur-md sticky top-0 z-10 shadow-sm">
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-2xl bg-brand-100 flex items-center justify-center text-xs font-black text-brand-700 flex-shrink-0">
+                            {activeChatName.slice(0,2).toUpperCase()}
                         </div>
-                    ))}
+                        <div>
+                            <p className="font-black text-zinc-900 text-sm leading-tight">{activeChatName}</p>
+                            <p className="text-[10px] text-emerald-500 font-bold">● Active Project</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-3" style={{ backgroundImage: 'radial-gradient(#e4e4e7 1px, transparent 1px)', backgroundSize: '24px 24px', backgroundColor: '#fafafa' }}>
+                    {messages.filter(msg => !msg.content.startsWith('[System]')).map(msg => {
+                        const isMine = msg.sender_address.toLowerCase() === walletAddress?.toLowerCase();
+                        return (
+                            <div key={msg.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
+                                {!isMine && (
+                                    <span className="text-[10px] font-bold text-zinc-400 ml-2 mb-1">{formatAddress(msg.sender_address)}</span>
+                                )}
+                                <div className={`px-4 py-3 rounded-2xl max-w-[75%] overflow-hidden shadow-sm ${
+                                    isMine
+                                        ? 'bg-brand-600 text-white rounded-br-sm'
+                                        : 'bg-white border border-zinc-100 text-zinc-800 rounded-bl-sm'
+                                }`}>
+                                    <div className="text-sm whitespace-pre-wrap break-words break-all leading-relaxed">
+                                        {renderMessageContent(msg.content)}
+                                    </div>
+                                </div>
+                                <span className={`text-[9px] font-medium mt-1 mx-2 ${
+                                    isMine ? 'text-zinc-400' : 'text-zinc-400'
+                                }`}>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                        );
+                    })}
                     <div ref={messagesEndRef} />
                 </div>
 
@@ -573,11 +615,23 @@ export const ProjectChatView: React.FC = () => {
                         </p>
                     </div>
                 ) : (
-                    <div className="p-4 bg-white border-t border-zinc-100">
-                        <form onSubmit={handleSendMessage} className="flex gap-2 max-w-4xl mx-auto items-end">
-                            <label className="p-3 bg-zinc-100 rounded-full cursor-pointer hover:bg-zinc-200 transition-all flex-shrink-0"><Paperclip size={18} /><input type="file" className="hidden" onChange={handleFileChange} disabled={isUploading || !activeRoomId} /></label>
-                            <textarea value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Type a message..." className="flex-1 p-3 bg-zinc-50 border border-zinc-200 rounded-2xl resize-none outline-none focus:bg-white focus:border-brand-500 transition-all shadow-inner" rows={1} />
-                            <button type="submit" disabled={isUploading} className="p-3 bg-brand-600 text-white rounded-full hover:bg-brand-700 shadow-lg transition-all flex-shrink-0">{isUploading ? <Loader2 className="animate-spin" /> : <Send size={18} />}</button>
+                    <div className="px-4 py-3 bg-white border-t border-zinc-100">
+                        <form onSubmit={handleSendMessage} className="flex gap-2 max-w-4xl mx-auto items-end bg-zinc-50 border border-zinc-200 rounded-[1.5rem] px-3 py-2 focus-within:border-brand-400 focus-within:bg-white focus-within:shadow-md transition-all">
+                            <label className="p-2 hover:bg-zinc-100 rounded-xl cursor-pointer text-zinc-400 hover:text-brand-600 transition-all flex-shrink-0 self-end mb-0.5">
+                                <Paperclip size={18} />
+                                <input type="file" className="hidden" onChange={handleFileChange} disabled={isUploading || !activeRoomId} />
+                            </label>
+                            <textarea
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e as any); } }}
+                                placeholder="Type a message... (Enter to send)"
+                                className="flex-1 py-2 bg-transparent resize-none outline-none text-sm text-zinc-800 placeholder:text-zinc-400"
+                                rows={1}
+                            />
+                            <button type="submit" disabled={isUploading} className="p-2.5 bg-brand-600 text-white rounded-xl hover:bg-brand-700 shadow-md transition-all flex-shrink-0 self-end mb-0.5">
+                                {isUploading ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
+                            </button>
                         </form>
                     </div>
                 )}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Briefcase, CheckCircle2, X, Loader2, UserCircle, MessageSquare, FileText, UploadCloud, Trash2, Calendar, Video, Coins, AlertCircle } from 'lucide-react';
+import { Plus, Briefcase, CheckCircle2, X, Loader2, UserCircle, MessageSquare, FileText, UploadCloud, Trash2, Calendar, Video, Coins, AlertCircle, Pencil } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useWallet } from '../lib/WalletContext';
 import { ethers } from 'ethers';
@@ -27,6 +27,12 @@ export const MarketplaceView: React.FC = () => {
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [isInterviewModalOpen, setIsInterviewModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+    const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
+    const [editJob, setEditJob] = useState({ id: '', title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', requirement: '', amount: '', duration_days: '7' }] });
+    const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
+    const [appToWithdraw, setAppToWithdraw] = useState<Application | null>(null);
 
     const [interviewDate, setInterviewDate] = useState('');
     const [interviewTime, setInterviewTime] = useState('');
@@ -100,6 +106,79 @@ export const MarketplaceView: React.FC = () => {
 
             setIsPostModalOpen(false);
             setNewJob({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', requirement: '', amount: '', duration_days: '7' }] });
+            fetchData();
+        } catch (err: any) {
+            console.error(err);
+            alert(err.message);
+        } finally { setIsProcessing(false); }
+    };
+
+    const handleEditJob = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsProcessing(true);
+        try {
+            const tagsArray = editJob.tags.split(',').map(t => t.trim()).filter(t => t);
+            const totalBudget = editJob.milestones.reduce((sum, ms) => sum + Number(ms.amount || 0), 0);
+
+            const { error } = await supabase.from('jobs').update({
+                title: editJob.title,
+                description: editJob.description,
+                budget: `${totalBudget} PAS`,
+                tags: tagsArray,
+                milestones_json: editJob.milestones,
+                experience_level: editJob.experience_level,
+                project_type: editJob.project_type,
+                deadline: editJob.deadline || null,
+            }).eq('id', editJob.id);
+
+            if (error) throw new Error('DB Error (Edit Job): ' + error.message);
+            setIsEditModalOpen(false);
+            fetchData();
+        } catch (err: any) {
+            console.error(err);
+            alert(err.message);
+        } finally { setIsProcessing(false); }
+    };
+
+    const openEditModal = (job: Job) => {
+        setEditJob({
+            id: job.id,
+            title: job.title,
+            description: job.description,
+            tags: (job.tags || []).join(', '),
+            experience_level: job.experience_level || 'Mid',
+            project_type: job.project_type || 'One-time',
+            deadline: job.deadline ? job.deadline.split('T')[0] : '',
+            milestones: job.milestones_json && job.milestones_json.length > 0
+                ? job.milestones_json.map((m: any) => ({ title: m.title || '', requirement: m.requirement || '', amount: m.amount?.toString() || '', duration_days: m.duration_days?.toString() || '7' }))
+                : [{ title: '', requirement: '', amount: '', duration_days: '7' }],
+        });
+        setIsEditModalOpen(true);
+    };
+
+    const handleDeleteJob = async () => {
+        if (!jobToDelete) return;
+        setIsProcessing(true);
+        try {
+            const { error } = await supabase.from('jobs').delete().eq('id', jobToDelete.id);
+            if (error) throw new Error('DB Error (Delete Job): ' + error.message);
+            setIsDeleteConfirmOpen(false);
+            setJobToDelete(null);
+            fetchData();
+        } catch (err: any) {
+            console.error(err);
+            alert(err.message);
+        } finally { setIsProcessing(false); }
+    };
+
+    const handleWithdrawApplication = async () => {
+        if (!appToWithdraw) return;
+        setIsProcessing(true);
+        try {
+            const { error } = await supabase.from('applications').delete().eq('id', appToWithdraw.id);
+            if (error) throw new Error('DB Error (Withdraw): ' + error.message);
+            setIsWithdrawConfirmOpen(false);
+            setAppToWithdraw(null);
             fetchData();
         } catch (err: any) {
             console.error(err);
@@ -422,6 +501,16 @@ export const MarketplaceView: React.FC = () => {
                                         {app.status === 'accepted' && (
                                             <button onClick={() => navigate('/chat')} className="p-3 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-600 hover:text-white transition-all"><MessageSquare size={18} /></button>
                                         )}
+
+                                        {/* Withdraw button — only for pending or interviewing */}
+                                        {(app.status === 'pending' || app.status === 'interviewing') && (
+                                            <button
+                                                onClick={() => { setAppToWithdraw(app); setIsWithdrawConfirmOpen(true); }}
+                                                className="mt-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-red-500 transition-colors"
+                                            >
+                                                <X size={12} /> Withdraw Application
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             );
@@ -474,7 +563,6 @@ export const MarketplaceView: React.FC = () => {
                                             hasApplied ? (
                                                 <span className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1 border border-emerald-100"><CheckCircle2 size={14}/> Applied</span>
                                             ) : isWorkingForEmployer ? (
-                                                // NEW: Show "Active Contract" tag if they are currently working for this employer
                                                 <span className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1 border border-amber-100"><AlertCircle size={14}/> Active Contract</span>
                                             ) : (
                                                 <span className="bg-brand-50 text-brand-600 px-3 py-1.5 rounded-xl font-black text-xs">View Details →</span>
@@ -483,6 +571,23 @@ export const MarketplaceView: React.FC = () => {
                                             <span className="bg-zinc-900 text-white px-3 py-1.5 rounded-xl font-black text-xs">View Applicants</span>
                                         )}
                                     </div>
+                                    {/* Edit/Delete actions — only for my-jobs tab and open jobs */}
+                                    {activeTab === 'my-jobs' && job.status === 'open' && (
+                                        <div className="flex gap-2 mt-4 pt-4 border-t border-zinc-50 relative z-10" onClick={e => e.stopPropagation()}>
+                                            <button
+                                                onClick={() => openEditModal(job)}
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-zinc-50 hover:bg-brand-50 text-zinc-500 hover:text-brand-600 rounded-xl font-black text-xs uppercase tracking-widest transition-all border border-zinc-100 hover:border-brand-100"
+                                            >
+                                                <Pencil size={14} /> Edit
+                                            </button>
+                                            <button
+                                                onClick={() => { setJobToDelete(job); setIsDeleteConfirmOpen(true); }}
+                                                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-zinc-50 hover:bg-red-50 text-zinc-500 hover:text-red-600 rounded-xl font-black text-xs uppercase tracking-widest transition-all border border-zinc-100 hover:border-red-100"
+                                            >
+                                                <Trash2 size={14} /> Delete
+                                            </button>
+                                        </div>
+                                    )}
                                 </motion.div>
                             );
                         })
@@ -778,6 +883,130 @@ export const MarketplaceView: React.FC = () => {
                             </div>
                             <button type="submit" disabled={isProcessing} className="w-full py-4 bg-zinc-900 text-white rounded-xl font-black uppercase">{isProcessing ? <Loader2 className="animate-spin mx-auto" /> : "Submit Application"}</button>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== EDIT JOB MODAL ===== */}
+            {isEditModalOpen && (
+                <div className="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[2rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 shadow-2xl">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 className="text-xl font-black text-zinc-900">Edit Job</h3>
+                                <p className="text-xs text-zinc-400 font-medium mt-0.5">Changes will only apply to open jobs with no accepted applicants.</p>
+                            </div>
+                            <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-zinc-100 rounded-xl transition-all"><X size={20} /></button>
+                        </div>
+                        <form onSubmit={handleEditJob} className="space-y-4">
+                            <input type="text" value={editJob.title} onChange={e => setEditJob({...editJob, title: e.target.value})} placeholder="Job Title" className="w-full p-4 border rounded-xl" required />
+                            <textarea value={editJob.description} onChange={e => setEditJob({...editJob, description: e.target.value})} placeholder="Detailed Description..." className="w-full h-36 p-4 border rounded-xl resize-none" required />
+                            <input type="text" value={editJob.tags} onChange={e => setEditJob({...editJob, tags: e.target.value})} placeholder="Skills / Tags (comma separated)" className="w-full p-4 border rounded-xl" required />
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-1 block">Experience Level</label>
+                                    <select value={editJob.experience_level} onChange={e => setEditJob({...editJob, experience_level: e.target.value})} className="w-full p-4 border rounded-xl bg-white font-bold text-sm">
+                                        <option>Junior</option><option>Mid</option><option>Senior</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-1 block">Project Type</label>
+                                    <select value={editJob.project_type} onChange={e => setEditJob({...editJob, project_type: e.target.value})} className="w-full p-4 border rounded-xl bg-white font-bold text-sm">
+                                        <option>One-time</option><option>Ongoing</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-1 block">Deadline (optional)</label>
+                                    <input type="date" value={editJob.deadline} onChange={e => setEditJob({...editJob, deadline: e.target.value})} className="w-full p-4 border rounded-xl bg-white font-bold text-sm" />
+                                </div>
+                            </div>
+
+                            <div className="border-t border-zinc-100 pt-6 mt-2">
+                                <div className="flex justify-between items-center mb-4">
+                                    <div><h4 className="font-black text-sm text-zinc-900">Payment Milestones</h4><p className="text-[10px] text-zinc-500">Break your project into paid deliverables.</p></div>
+                                    <button type="button" onClick={() => setEditJob({...editJob, milestones: [...editJob.milestones, {title: '', requirement: '', amount: '', duration_days: '7'}]})} className="text-xs font-bold text-brand-600 flex items-center gap-1 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg"><Plus size={14} /> Add Milestone</button>
+                                </div>
+                                <div className="space-y-3">
+                                    {editJob.milestones.map((ms, index) => (
+                                        <div key={index} className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-100">
+                                            <span className="text-xs font-black text-zinc-400 pl-2">{index + 1}.</span>
+                                            <input type="text" value={ms.title} onChange={e => { const u = [...editJob.milestones]; u[index].title = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
+                                            <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...editJob.milestones]; u[index].amount = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
+                                            <input type="number" value={ms.duration_days} onChange={e => { const u = [...editJob.milestones]; u[index].duration_days = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
+                                            {index > 0 && <button type="button" onClick={() => { const u = [...editJob.milestones]; u.splice(index, 1); setEditJob({...editJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-4 bg-zinc-100 text-zinc-700 rounded-xl font-black uppercase text-sm hover:bg-zinc-200 transition-all">Cancel</button>
+                                <button type="submit" disabled={isProcessing} className="flex-1 py-4 bg-brand-600 text-white rounded-xl font-black uppercase text-sm shadow-xl shadow-brand-600/20 hover:bg-brand-700 transition-all disabled:opacity-60">
+                                    {isProcessing ? <Loader2 className="animate-spin mx-auto" size={20} /> : `Save Changes · ${editJob.milestones.reduce((sum, ms) => sum + Number(ms.amount || 0), 0)} PAS`}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== WITHDRAW APPLICATION MODAL ===== */}
+            {isWithdrawConfirmOpen && appToWithdraw && (
+                <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl">
+                        <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center mb-6">
+                            <X className="text-amber-500" size={28} />
+                        </div>
+                        <h3 className="text-xl font-black text-zinc-900 mb-2">Withdraw Application?</h3>
+                        <p className="text-sm text-zinc-500 font-medium mb-2">You are about to withdraw your application for:</p>
+                        <p className="text-sm font-black text-zinc-800 bg-zinc-50 px-4 py-3 rounded-xl mb-6 border border-zinc-100">"{appToWithdraw.jobs?.title}"</p>
+                        <p className="text-xs text-amber-600 font-bold bg-amber-50 border border-amber-100 px-4 py-3 rounded-xl mb-6">⚠️ Your application will be permanently removed. The employer will no longer be able to see it.</p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setIsWithdrawConfirmOpen(false); setAppToWithdraw(null); }}
+                                className="flex-1 py-4 bg-zinc-100 text-zinc-700 rounded-xl font-black uppercase text-sm hover:bg-zinc-200 transition-all"
+                            >
+                                Keep It
+                            </button>
+                            <button
+                                onClick={handleWithdrawApplication}
+                                disabled={isProcessing}
+                                className="flex-1 py-4 bg-amber-500 text-white rounded-xl font-black uppercase text-sm shadow-xl shadow-amber-500/20 hover:bg-amber-600 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                            >
+                                {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <><X size={16} /> Withdraw</>}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== DELETE CONFIRMATION MODAL ===== */}
+            {isDeleteConfirmOpen && jobToDelete && (
+                <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl">
+                        <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mb-6">
+                            <Trash2 className="text-red-500" size={28} />
+                        </div>
+                        <h3 className="text-xl font-black text-zinc-900 mb-2">Delete Job Posting?</h3>
+                        <p className="text-sm text-zinc-500 font-medium mb-2">You are about to permanently delete:</p>
+                        <p className="text-sm font-black text-zinc-800 bg-zinc-50 px-4 py-3 rounded-xl mb-6 border border-zinc-100">"{jobToDelete.title}"</p>
+                        <p className="text-xs text-red-500 font-bold bg-red-50 border border-red-100 px-4 py-3 rounded-xl mb-6">⚠️ This action cannot be undone. All pending applications for this job will also be removed.</p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setIsDeleteConfirmOpen(false); setJobToDelete(null); }}
+                                className="flex-1 py-4 bg-zinc-100 text-zinc-700 rounded-xl font-black uppercase text-sm hover:bg-zinc-200 transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteJob}
+                                disabled={isProcessing}
+                                className="flex-1 py-4 bg-red-600 text-white rounded-xl font-black uppercase text-sm shadow-xl shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                            >
+                                {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <><Trash2 size={16} /> Delete</>}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

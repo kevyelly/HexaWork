@@ -42,12 +42,13 @@ const ADMIN_WALLETS = [
 function AppContent() {
     const location = useLocation();
     const navigate = useNavigate();
-    const { isAdmin, walletAddress } = useWallet();
+    const { walletAddress } = useWallet();
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
 
-    // UNIFIED NOTIFICATION SCANNER
+    const isAdmin = walletAddress && ADMIN_WALLETS.map(w => w.toLowerCase()).includes(walletAddress.toLowerCase());
+
     useEffect(() => {
         if (!walletAddress) {
             setHasUnreadMessages(false);
@@ -55,23 +56,20 @@ function AppContent() {
         }
 
         const lowerWallet = walletAddress.toLowerCase();
-        const isAdminUser = ADMIN_WALLETS.map(w => w.toLowerCase()).includes(lowerWallet);
 
         const checkUnread = async () => {
             try {
                 let isUnread = false;
 
-                // 1. Check for Unread Text Messages
                 const { data: msgs } = await supabase
                     .from('messages')
                     .select('id')
                     .eq('receiver_address', lowerWallet)
-                    .or('is_read.eq.false,is_read.is.null') // catches explicitly false OR old null messages
+                    .or('is_read.eq.false,is_read.is.null')
                     .limit(1);
 
                 if (msgs && msgs.length > 0) isUnread = true;
 
-                // 2. Check for Active System Alerts (Blue notification boxes)
                 if (!isUnread) {
                     const { data: notifs } = await supabase
                         .from('notifications')
@@ -82,15 +80,26 @@ function AppContent() {
                     if (notifs && notifs.length > 0) isUnread = true;
                 }
 
-                // 3. Check for Admin Disputes (Admins only)
-                if (isAdminUser && !isUnread) {
+                // ADMIN DYNAMIC QUEUE CHECK
+                if (isAdmin && !isUnread) {
                     const { data: disputes } = await supabase
-                        .from('project_milestones')
-                        .select('id')
-                        .in('status', ['appealed', 'escalated'])
-                        .limit(1);
+                        .from('appeals')
+                        .select('id, claimed_by, claimed_at')
+                        .in('status', ['pending', 'escalated']);
 
-                    if (disputes && disputes.length > 0) isUnread = true;
+                    if (disputes && disputes.length > 0) {
+                        const now = new Date().getTime();
+                        const twoHours = 2 * 60 * 60 * 1000;
+
+                        // Show dot if there is an unclaimed dispute, one claimed by ME, or a timed-out one.
+                        const hasAvailable = disputes.some(d =>
+                            !d.claimed_by ||
+                            d.claimed_by.toLowerCase() === lowerWallet ||
+                            (d.claimed_at && now - new Date(d.claimed_at).getTime() > twoHours)
+                        );
+
+                        if (hasAvailable) isUnread = true;
+                    }
                 }
 
                 setHasUnreadMessages(isUnread);
@@ -99,34 +108,37 @@ function AppContent() {
             }
         };
 
-        // Run immediately
         checkUnread();
 
-        // 3-Second Background Polling (Guarantees the dot updates even if WebSockets drop)
         const intervalId = setInterval(checkUnread, 3000);
 
-        // Realtime WebSockets for instant updates when possible
         const channel = supabase.channel('global_nav_tracker')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, checkUnread)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, checkUnread)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'project_milestones' }, checkUnread)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appeals' }, checkUnread)
             .subscribe();
 
         return () => {
             clearInterval(intervalId);
             supabase.removeChannel(channel);
         };
-    }, [walletAddress]);
+    }, [walletAddress, isAdmin]);
 
     if (location.pathname === "/") {
-        return <LandingPageView onNavigate={(view) => navigate(`/${view}`)} />;
+        return <LandingPageView onNavigate={(view) => {
+            if (view === 'dashboard' && isAdmin) {
+                navigate('/admin');
+            } else {
+                navigate(`/${view}`);
+            }
+        }} />;
     }
 
-    const navItems = isAdmin 
+    const navItems = isAdmin
         ? [
-            { path: "/admin", icon: ShieldAlert, label: "Admin Panel" },
-            { path: "/chat", icon: MessageSquare, label: "Messages" },
-          ]
+            { path: "/admin", icon: ShieldAlert, label: "Admin Dashboard" },
+            { path: "/chat", icon: MessageSquare, label: "Dispute Chats" },
+        ]
         : [
             { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
             { path: "/jobmarket", icon: Briefcase, label: "Marketplace" },
@@ -159,7 +171,9 @@ function AppContent() {
                             <span className="font-black text-lg tracking-tight text-zinc-900 block leading-tight">
                                 HexaWork
                             </span>
-                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Freelance Platform</span>
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                                {isAdmin ? "Platform Admin" : "Freelance Platform"}
+                            </span>
                         </div>
                     )}
                 </div>
@@ -219,7 +233,9 @@ function AppContent() {
                                     </div>
                                     <div className="ml-3">
                                         <span className="font-black text-lg tracking-tight text-zinc-900 block leading-tight">HexaWork</span>
-                                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Freelance Platform</span>
+                                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                                            {isAdmin ? "Platform Admin" : "Freelance Platform"}
+                                        </span>
                                     </div>
                                 </div>
                                 <button

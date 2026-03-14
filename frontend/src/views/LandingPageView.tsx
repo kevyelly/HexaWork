@@ -260,12 +260,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     >
                         Marketplace
                     </a>
-                    <a
-                        href="#"
+                    <button
+                        onClick={() => onNavigate('how-it-works')}
                         className="hover:text-brand-600 transition-colors"
                     >
                         How it Works
-                    </a>
+                    </button>
                     <a
                         href="#"
                         className="hover:text-brand-600 transition-colors"

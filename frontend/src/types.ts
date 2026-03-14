@@ -1,4 +1,5 @@
-export type View = 'landing' | 'dashboard' | 'marketplace' | 'project-chat' | 'team' | 'settings' | 'disputes' | 'login' | 'signup' | 'admin';
+export type View = 'landing' | 'dashboard' | 'marketplace' | 'project-chat' | 'team' | 'settings' | 'disputes' | 'login' | 'signup' | 'admin' | 'how-it-works';
+
 
 export interface Project {
   id: number;

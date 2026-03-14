@@ -32,6 +32,7 @@ import { CalendarView } from "./views/CalendarView";
 import { ProfileView } from "./views/ProfileView";
 import { LandingPageView } from "./views/LandingPageView";
 import { AdminView } from "./views/AdminView";
+import { HowItWorksView } from "./views/HowItWorksView";
 
 const ADMIN_WALLETS = [
     "0xbeE339Aa5d7af6758164F5739a2c98EB6f16a3AB",
@@ -132,6 +133,10 @@ function AppContent() {
                 navigate(`/${view}`);
             }
         }} />;
+    }
+
+    if (location.pathname === "/how-it-works") {
+        return <HowItWorksView onNavigate={(view) => navigate(view === 'landing' ? '/' : `/${view}`)} />;
     }
 
     const navItems = isAdmin

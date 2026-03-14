@@ -15,6 +15,7 @@ const ADMIN_WALLETS = [
 
 interface Job { id: string; employer_address: string; title: string; description: string; budget: string; tags: string[]; status: string; created_at: string; milestones_json?: any[]; contract_address?: string; experience_level?: string; project_type?: string; deadline?: string; }
 interface Application { id: string; job_id: string; freelancer_address: string; cover_letter: string; resume_url?: string; status: string; created_at: string; meeting_date?: string; meeting_link?: string; hired_at?: string; jobs?: Job; }
+interface EmployerProfile { full_name?: string; avatar_url?: string; title?: string; }
 
 export const MarketplaceView: React.FC = () => {
     const { walletAddress } = useWallet();
@@ -27,6 +28,7 @@ export const MarketplaceView: React.FC = () => {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [myApplications, setMyApplications] = useState<Application[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [employerProfiles, setEmployerProfiles] = useState<Record<string, EmployerProfile>>({});
 
     const [isPostModalOpen, setIsPostModalOpen] = useState(false);
     const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
@@ -45,6 +47,7 @@ export const MarketplaceView: React.FC = () => {
     const [selectedApplicant, setSelectedApplicant] = useState<Application | null>(null);
     const [selectedJob, setSelectedJob] = useState<Job | null>(null);
     const [jobApplicants, setJobApplicants] = useState<Application[]>([]);
+    const [viewingEmployer, setViewingEmployer] = useState<string | null>(null);
 
     const [newJob, setNewJob] = useState({ title: '', description: '', tags: '', experience_level: 'Mid', project_type: 'One-time', deadline: '', milestones: [{ title: '', requirement: '', amount: '', duration_days: '7' }] });
     const [coverLetter, setCoverLetter] = useState('');
@@ -70,7 +73,22 @@ export const MarketplaceView: React.FC = () => {
         setIsLoading(true);
         const { data: jobsData, error: jobsErr } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
         if (jobsErr) console.error("Jobs fetch error:", jobsErr);
-        if (jobsData) setJobs(jobsData);
+        if (jobsData) {
+            setJobs(jobsData);
+            // Fetch all unique employer profiles for display on job cards
+            const uniqueAddresses = Array.from(new Set(jobsData.map((j: Job) => j.employer_address.toLowerCase())));
+            if (uniqueAddresses.length > 0) {
+                const { data: profilesData } = await supabase
+                    .from('users')
+                    .select('wallet_address, full_name, avatar_url, title')
+                    .in('wallet_address', uniqueAddresses);
+                if (profilesData) {
+                    const profileMap: Record<string, EmployerProfile> = {};
+                    profilesData.forEach((p: any) => { profileMap[p.wallet_address.toLowerCase()] = p; });
+                    setEmployerProfiles(profileMap);
+                }
+            }
+        }
 
         if (walletAddress) {
             const lowerWallet = walletAddress.toLowerCase();
@@ -581,13 +599,33 @@ export const MarketplaceView: React.FC = () => {
                                 >
                                     <div className="absolute top-0 right-0 w-32 h-32 bg-brand-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
                                     <div className="flex justify-between items-start mb-6 relative z-10">
-                                        <div className="w-14 h-14 bg-zinc-50 rounded-2xl flex items-center justify-center group-hover:bg-brand-100 transition-colors"><Briefcase className="text-zinc-400 group-hover:text-brand-600" size={28} /></div>
+                                        <div className="w-14 h-14 bg-zinc-50 rounded-2xl flex items-center justify-center group-hover:bg-brand-100 transition-colors overflow-hidden">
+                                            {(() => {
+                                                const profile = employerProfiles[job.employer_address.toLowerCase()];
+                                                return profile?.avatar_url
+                                                    ? <img src={profile.avatar_url} alt="employer" className="w-full h-full object-cover" />
+                                                    : <Briefcase className="text-zinc-400 group-hover:text-brand-600" size={28} />;
+                                            })()}
+                                        </div>
                                         <div className="flex flex-col items-end gap-1">
                                             <span className="text-[10px] font-black text-brand-600 bg-brand-50 px-3 py-1.5 rounded-full uppercase tracking-widest">{job.status}</span>
                                             {job.experience_level && <span className="text-[10px] font-bold text-zinc-400 bg-zinc-50 px-2 py-1 rounded-full">{job.experience_level}</span>}
                                         </div>
                                     </div>
                                     <h3 className="font-black text-zinc-900 text-xl group-hover:text-brand-600 transition-colors mb-3 leading-tight">{job.title}</h3>
+                                    {/* Employer info */}
+                                    {(() => {
+                                        const profile = employerProfiles[job.employer_address.toLowerCase()];
+                                        return (
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <UserCircle size={14} className="text-zinc-400 flex-shrink-0" />
+                                                <span className="text-xs font-bold text-zinc-500 truncate">
+                                                    {profile?.full_name || `${job.employer_address.slice(0, 6)}...${job.employer_address.slice(-4)}`}
+                                                </span>
+                                                {profile?.title && <span className="text-[10px] text-zinc-400 truncate">· {profile.title}</span>}
+                                            </div>
+                                        );
+                                    })()}
                                     <p className="text-zinc-500 text-sm font-medium line-clamp-2 mb-4 flex-1">{job.description}</p>
                                     {job.project_type && <p className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg w-fit mb-4">{job.project_type}</p>}
                                     <div className="flex flex-wrap gap-2 mb-6 relative z-10">
@@ -667,8 +705,32 @@ export const MarketplaceView: React.FC = () => {
                     <div className="bg-white rounded-[2rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="p-8 pb-0">
                             <div className="flex justify-between items-start mb-4">
-                                <div className="w-14 h-14 bg-brand-50 rounded-2xl flex items-center justify-center">
-                                    <Briefcase className="text-brand-600" size={28} />
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() => setViewingEmployer(selectedJob.employer_address.toLowerCase())}
+                                        className="flex items-center gap-3 hover:bg-zinc-50 rounded-2xl p-2 -m-2 transition-all group/emp cursor-pointer text-left"
+                                        title="View employer profile"
+                                    >
+                                        <div className="w-14 h-14 bg-brand-50 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-transparent group-hover/emp:border-brand-300 transition-all">
+                                            {(() => {
+                                                const profile = employerProfiles[selectedJob.employer_address.toLowerCase()];
+                                                return profile?.avatar_url
+                                                    ? <img src={profile.avatar_url} alt="employer" className="w-full h-full object-cover" />
+                                                    : <Briefcase className="text-brand-600" size={28} />;
+                                            })()}
+                                        </div>
+                                        {(() => {
+                                            const profile = employerProfiles[selectedJob.employer_address.toLowerCase()];
+                                            return (
+                                                <div>
+                                                    <p className="font-black text-zinc-900 leading-tight group-hover/emp:text-brand-600 transition-colors">{profile?.full_name || 'Anonymous Employer'}</p>
+                                                    {profile?.title && <p className="text-xs text-brand-600 font-bold mt-0.5">{profile.title}</p>}
+                                                    <p className="text-[10px] font-mono text-zinc-400 mt-0.5">{selectedJob.employer_address.slice(0,8)}...{selectedJob.employer_address.slice(-6)}</p>
+                                                    <p className="text-[10px] text-brand-500 font-bold mt-0.5 opacity-0 group-hover/emp:opacity-100 transition-all">View Profile →</p>
+                                                </div>
+                                            );
+                                        })()}
+                                    </button>
                                 </div>
                                 <button onClick={() => setIsDetailModalOpen(false)} className="p-2 hover:bg-zinc-100 rounded-xl transition-all"><X size={20} /></button>
                             </div>
@@ -772,6 +834,78 @@ export const MarketplaceView: React.FC = () => {
                 </div>
             )}
 
+            {/* Employer Profile Popup */}
+            {viewingEmployer && (() => {
+                const profile = employerProfiles[viewingEmployer] as any;
+                const addr = viewingEmployer;
+                return (
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={() => setViewingEmployer(null)}>
+                        <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden border border-zinc-100" onClick={e => e.stopPropagation()}>
+                            {/* Header with avatar */}
+                            <div className="p-8 pb-6 border-b border-zinc-100 flex items-start gap-5 bg-gradient-to-br from-brand-50 to-indigo-50/50">
+                                <div className="w-20 h-20 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-600 font-black text-2xl shadow-inner overflow-hidden flex-shrink-0 border-2 border-brand-200/50">
+                                    {profile?.avatar_url
+                                        ? <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                                        : (profile?.full_name?.charAt(0).toUpperCase() || '?')
+                                    }
+                                </div>
+                                <div className="flex-1 min-w-0 pt-1">
+                                    <h2 className="text-xl font-black text-zinc-900 leading-tight mb-1">{profile?.full_name || 'Anonymous Employer'}</h2>
+                                    {profile?.title && <p className="text-brand-600 font-bold text-sm mb-2">{profile.title}</p>}
+                                    <div className="font-mono text-[10px] font-bold text-zinc-400 bg-white px-3 py-1.5 rounded-xl border border-zinc-200 w-fit truncate max-w-full">
+                                        {addr}
+                                    </div>
+                                </div>
+                                <button onClick={() => setViewingEmployer(null)} className="p-2 hover:bg-white/80 rounded-xl flex-shrink-0 transition-all">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Profile body */}
+                            <div className="p-8 space-y-5">
+                                {profile?.bio && (
+                                    <div>
+                                        <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">About</h3>
+                                        <p className="text-sm font-medium text-zinc-700 leading-relaxed bg-zinc-50 p-4 rounded-2xl border border-zinc-100">{profile.bio}</p>
+                                    </div>
+                                )}
+
+                                {profile?.hourly_rate && (
+                                    <div className="bg-zinc-50 p-4 rounded-2xl border border-zinc-100">
+                                        <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Hourly Rate</h3>
+                                        <p className="text-lg font-black text-zinc-900">{profile.hourly_rate} PAS/hr</p>
+                                    </div>
+                                )}
+
+                                {profile?.skills && profile.skills.length > 0 && (
+                                    <div>
+                                        <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">Skills</h3>
+                                        <div className="flex flex-wrap gap-2">
+                                            {profile.skills.map((skill: string, i: number) => (
+                                                <span key={i} className="px-3 py-1.5 bg-brand-50 text-brand-700 text-xs font-bold rounded-lg border border-brand-100">
+                                                    {skill}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!profile && (
+                                    <p className="text-center text-zinc-400 text-sm font-medium py-4">This employer hasn't set up a full profile yet.</p>
+                                )}
+                            </div>
+
+                            <div className="p-6 bg-zinc-50 border-t border-zinc-100 flex justify-end">
+                                <button onClick={() => setViewingEmployer(null)} className="px-6 py-3 font-bold text-zinc-600 bg-white hover:bg-zinc-100 rounded-xl border border-zinc-200 text-sm transition-colors">
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+
             {isPostModalOpen && (
                 <div className="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-[2rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 shadow-2xl">
@@ -819,7 +953,7 @@ export const MarketplaceView: React.FC = () => {
                                                 {index > 0 && <button type="button" onClick={() => { const u = [...newJob.milestones]; u.splice(index, 1); setNewJob({...newJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg shrink-0"><Trash2 size={16} /></button>}
                                             </div>
                                             <div className="pl-7 pr-1">
-                                                <input type="text" value={ms.requirement || ''} onChange={e => { const u = [...newJob.milestones]; u[index].requirement = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Requirement (e.g. Figma link, specific feature)" className="w-full p-3 border rounded-lg text-sm bg-white" required />
+                                                <textarea value={ms.requirement || ''} onChange={e => { const u = [...newJob.milestones]; u[index].requirement = e.target.value; setNewJob({...newJob, milestones: u}); }} placeholder="Requirement (e.g. Figma link, specific feature, bullet points)" className="w-full p-3 border rounded-lg text-sm bg-white min-h-[80px] resize-y" required />
                                             </div>
                                         </div>
                                     ))}
@@ -967,12 +1101,17 @@ export const MarketplaceView: React.FC = () => {
                                 </div>
                                 <div className="space-y-3">
                                     {editJob.milestones.map((ms, index) => (
-                                        <div key={index} className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-100">
-                                            <span className="text-xs font-black text-zinc-400 pl-2">{index + 1}.</span>
-                                            <input type="text" value={ms.title} onChange={e => { const u = [...editJob.milestones]; u[index].title = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
-                                            <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...editJob.milestones]; u[index].amount = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
-                                            <input type="number" value={ms.duration_days} onChange={e => { const u = [...editJob.milestones]; u[index].duration_days = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
-                                            {index > 0 && <button type="button" onClick={() => { const u = [...editJob.milestones]; u.splice(index, 1); setEditJob({...editJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>}
+                                        <div key={index} className="flex flex-col gap-2 bg-zinc-50 p-3 rounded-xl border border-zinc-100">
+                                            <div className="flex gap-2 items-center">
+                                                <span className="text-xs font-black text-zinc-400 pl-1 w-4">{index + 1}.</span>
+                                                <input type="text" value={ms.title} onChange={e => { const u = [...editJob.milestones]; u[index].title = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="e.g. UI Wireframes" className="flex-1 p-3 border rounded-lg text-sm bg-white" required />
+                                                <input type="number" step="0.01" value={ms.amount} onChange={e => { const u = [...editJob.milestones]; u[index].amount = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="PAS" className="w-24 p-3 border rounded-lg text-sm bg-white" required />
+                                                <input type="number" value={ms.duration_days} onChange={e => { const u = [...editJob.milestones]; u[index].duration_days = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="Days" className="w-20 p-3 border rounded-lg text-sm bg-white" required />
+                                                {index > 0 && <button type="button" onClick={() => { const u = [...editJob.milestones]; u.splice(index, 1); setEditJob({...editJob, milestones: u}); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg shrink-0"><Trash2 size={16} /></button>}
+                                            </div>
+                                            <div className="pl-7 pr-1">
+                                                <textarea value={ms.requirement || ''} onChange={e => { const u = [...editJob.milestones]; u[index].requirement = e.target.value; setEditJob({...editJob, milestones: u}); }} placeholder="Requirement (e.g. Figma link, specific feature, bullet points)" className="w-full p-3 border rounded-lg text-sm bg-white min-h-[80px] resize-y" required />
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
